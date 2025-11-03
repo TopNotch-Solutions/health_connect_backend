@@ -75,7 +75,7 @@ exports.register = async (req, res) => {
     });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         message: "You’re already registered with this phone number or email. Try logging in instead.",
       });
     }
