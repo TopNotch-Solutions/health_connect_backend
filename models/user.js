@@ -90,15 +90,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-  hpcnaCertificate: {
+  primaryQualification: {
     type: String,
     required: false,
   },
-  medicalDegree: {
+  annualQualification: {
     type: String,
     required: false,
   },
-  professionalLicense: {
+  idDocumentFront: {
+    type: String,
+    required: false,
+  },
+  idDocumentBack: {
     type: String,
     required: false,
   },

@@ -17,6 +17,7 @@ const io = new Server(server, {
 });
 
 const authRouter = require("./routes/common/authRoute");
+const authAppRouter = require("./routes/app/authRoute");
 
 
 app.use(express.static("public"));
@@ -32,6 +33,7 @@ app.use(
 );
 
 app.use("/api/auth", authRouter);
+app.use("/api/app/auth", authAppRouter);
 
 mongoose
   .connect(process.env.MONGO_URI, {
