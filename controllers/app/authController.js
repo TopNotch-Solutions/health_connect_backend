@@ -442,7 +442,7 @@ exports.resetPassword = async (req, res) => {
       confirmPassword,
     } = req.body;
 
-    let { userId } = req.params;
+    let userId  = req.params.id;
 
      if (!userId) {
       return res

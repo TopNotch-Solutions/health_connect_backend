@@ -7,7 +7,7 @@ const authRouter = Router();
 authRouter.post("/register-patient", uploadSingle, registerPatient);
 authRouter.post("/register-health-provider", uploadMultipleDocuments, registerHealthProvider);
 authRouter.post("/forgot-password-verify-otp", verifyOtpReset);
-authRouter.post("/forgot-password-reset", resetPassword);
+authRouter.post("/forgot-password-reset/:id", resetPassword);
 authRouter.post("/login", login);
 authRouter.delete("/remove-profile-image/:id", removeProfileImage);
 authRouter.patch("/upload-profile-image/:id", updateProfileImage);
