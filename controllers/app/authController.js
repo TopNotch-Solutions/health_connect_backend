@@ -6,6 +6,7 @@ const { isValidCellphoneNumber } = require("../../utils/cellphoneNumberValidatio
 const walletIDGenerator = require("../../utils/walletGenerator");
 const { validatePassword } = require("../../utils/validatePassword");
 const OTP = require("../../models/otp");
+const LoginAttempt = require("../../models/loginAttempts");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -487,6 +488,235 @@ exports.resetPassword = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Great! Your password was reset successfully.",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.login = async (req, res) => {
+  const {email, password} = req.body;
+
+  if (!email) {
+      return res
+        .status(400)
+        .json({ message: "Username is required." });
+    }
+    if (!password) {
+      return res
+        .status(400)
+        .json({ message: "Password is required." });
+    }
+  try{
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "We couldn’t sign you in. Please check your username and password, then try again.",
+      });
+    }
+
+    let loginAttempt = await LoginAttempt.findOne({ userId: user._id });
+    if (!loginAttempt) {
+      loginAttempt = await LoginAttempt.create({ userId: user._id, attempts: 0 });
+      console.log(
+        `[LOGIN ATTEMPT CREATED] For userId: ${user._id}, attempts: ${loginAttempt.attempts}`
+      );
+    }else {
+      console.log(
+        `[LOGIN ATTEMPT FOUND] For userId: ${user._id}, attempts: ${loginAttempt.attempts}, lastAttempt: ${loginAttempt.lastAttempt}`
+      );
+    }
+
+    const lockoutDurations = [3, 5, 10, 30];
+    if (loginAttempt.attempts >= 3 && loginAttempt.lastAttempt) {
+      const now = new Date();
+      const lastAttemptTime = new Date(loginAttempt.lastAttempt);
+      const diffMinutes =
+        (now.getTime() - lastAttemptTime.getTime()) / (1000 * 60);
+        const lockoutOccurrence = Math.floor((loginAttempt.attempts - 1) / 3);
+      const currentLockoutDuration =
+        lockoutDurations[
+          Math.min(lockoutOccurrence, lockoutDurations.length - 1)
+        ];
+         if (diffMinutes < currentLockoutDuration) {
+        const waitTime = Math.ceil(currentLockoutDuration - diffMinutes);
+        console.log(
+          `[LOCKOUT] User ${user.email} is locked. Attempts: ${loginAttempt.attempts}. Needs to wait ${waitTime} more min(s). Current lockout duration: ${currentLockoutDuration} min.`
+        );
+        return res.status(403).json({
+          status: false,
+          message: `You’ve made too many unsuccessful attempts. Please wait ${waitTime} minute(s) before trying again.`,
+        });
+      }
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      const failedAttemptsCount = loginAttempt.attempts + 1;
+      await LoginAttempt.updateOne(
+        { userId: user._id },
+        { $set: { attempts: failedAttemptsCount, lastAttempt: new Date() } });
+         console.log(
+        `[LOGIN FAIL] User: ${user.email}, Attempts updated to: ${failedAttemptsCount}`
+      );
+
+       let message =
+        "The credentials you entered are incorrect. Please verify your username or password and try again.";
+         if (failedAttemptsCount >= 3 && failedAttemptsCount % 3 === 0) {
+        const lockoutOccurrence = Math.floor((failedAttemptsCount - 1) / 3);
+        const nextLockoutDuration =
+          lockoutDurations[
+            Math.min(lockoutOccurrence, lockoutDurations.length - 1)
+          ];
+        message = `Oops! Too many failed login attempts. Please wait ${nextLockoutDuration} minute(s) before trying again`;
+      }
+      return res.status(401).json({
+        status: false,
+        message: message,
+      });
+    }
+    console.log(
+      `[LOGIN SUCCESS] User: ${user.email}. Current attempts before reset: ${loginAttempt.attempts}`
+    );
+    if (loginAttempt.attempts > 0 || loginAttempt.lastAttempt !== null) {
+      const numberOfAffectedRows = await LoginAttempt.updateOne(
+        { userId: user._id },
+        { $set: { attempts: 0, lastAttempt: null } }
+      );
+       if (numberOfAffectedRows > 0) {
+        console.log(
+          `[LOGIN SUCCESS] Login attempts reset successfully for userId: ${user._id}. Rows affected: ${numberOfAffectedRows}`
+        );
+      } else {
+        console.warn(
+          `[LOGIN SUCCESS] FAILED TO RESET login attempts for userId: ${user._id}. No rows were updated. This is unexpected. Current attempts: ${loginAttempt.attempts}`
+        );
+      }
+    }else{
+       console.log(
+        `[LOGIN SUCCESS] No reset needed for userId: ${user._id} as attempts were already 0 and lastAttempt was null.`
+      );
+    }
+
+    const updatedLoginAttempt = await LoginAttempt.findOne({ userId: user._id });
+    if (updatedLoginAttempt) {
+      console.log(
+        `[LOGIN SUCCESS] LoginAttempt state AFTER successful login for userId: ${user.id}, attempts: ${updatedLoginAttempt.attempts}, lastAttempt: ${updatedLoginAttempt.lastAttempt}`
+      );
+      loginAttempt = updatedLoginAttempt;
+    } else {
+      console.warn(
+        `[LOGIN SUCCESS] LoginAttempt record NOT FOUND for userId: ${user.id} after successful login. Creating one.`
+      );
+      loginAttempt = await LoginAttempt.create({ userId: user._id, attempts: 0 });
+    }
+     return res.status(200).json({
+      status: true,
+      message: "You have logged in successfully.",
+      user:{
+        fullname: user.fullname,
+        email: user.email,
+        role: user.role,
+        cellphoneNumber: user.cellphoneNumber,
+        walletID: user.walletID,
+        userId: user._id,
+        dateOfBirth: user.dateOfBirth,
+        balance: user.balance,
+        profileImage: user.profileImage,
+        address: user.address,
+        region: user.region,
+        town: user.town,
+        isAccountVerified: user.isAccountVerified,
+      }
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.removeProfileImage = async (req, res) => {
+  const { id } = req.params;
+
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.profileImage) {
+      const oldImagePath = path.join("public", "images", existingUser.profileImage);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.profileImage = null;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your profile image has been removed successfully.",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updateProfileImage = async (req, res) => {
+  const { id } = req.params;
+  const files = req.files;
+
+  let profileImagePath = files.profileImage
+      ? files.profileImage[0].filename
+      : null;
+      
+
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!profileImagePath) {
+      return res
+        .status(400)
+        .json({ message: "Profile image is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.profileImage) {
+      const oldImagePath = path.join("public", "images", existingUser.profileImage);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.profileImage = profileImagePath;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your profile image has been updated successfully",
     });
   }catch (error) {
     console.error("Error registering patient:", error);
