@@ -78,7 +78,11 @@ exports.registerPatient = async (req, res) => {
         .status(400)
         .json({ message: "Profile image is required." });
     }
-
+    if (!nationalId) {
+      return res
+        .status(400)
+        .json({ message: "National ID number is required." });
+    }
     if (!isValidCellphoneNumber(cellphoneNumber)) {
       return res.status(400).json({ message: "Oops! That doesn’t look like a valid cellphone number. Please check and try again." });
     }
@@ -132,7 +136,7 @@ exports.registerPatient = async (req, res) => {
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       gender,
       walletID: walletId,
-      nationalID: nationalId,
+      nationalId,
       address,
       role: "patient",
       town,
@@ -162,6 +166,7 @@ exports.registerHealthProvider = async (req, res) => {
       hpcnaNumber,
       address,
       gender,
+      nationalId,
       hpcnaExpiryDate,
       specializations,
       yearsOfExperience,
@@ -228,6 +233,11 @@ exports.registerHealthProvider = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Role is required." });
+    }
+    if (!nationalId) {
+      return res
+        .status(400)
+        .json({ message: "National ID number is required." });
     }
      if (!specializations || specializations.length === 0) {
       return res
@@ -350,6 +360,7 @@ exports.registerHealthProvider = async (req, res) => {
       address,
       gender,
       bio,
+      nationalId,
       hpcnaNumber,
       role: newRole ,
       hpcnaExpiryDate,
@@ -621,6 +632,7 @@ exports.login = async (req, res) => {
         cellphoneNumber: user.cellphoneNumber,
         walletID: user.walletID,
         userId: user._id,
+        gender: user.gender,
         dateOfBirth: user.dateOfBirth,
         balance: user.balance,
         profileImage: user.profileImage,
@@ -791,9 +803,209 @@ exports.updatePatientDetails = async (req, res) => {
       return res.status(400).json({ message: "Oops! That doesn’t look like a valid cellphone number. Please check and try again." });
     }
   try{
+    const existingUser = await User.findById(userId);
 
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    existingUser.fullname = fullname;
+    existingUser.cellphoneNumber = cellphoneNumber;
+    existingUser.email =  email;
+    existingUser.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : existingUser.dateOfBirth;
+    existingUser.gender = gender;
+    existingUser.nationalID = nationalId;
+    existingUser.address = address;
+    existingUser.town = town;
+    existingUser.region = region;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your profile details have been updated successfully.",
+    });
   }catch (error) {
     console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.registerHealthProvider = async (req, res) => {
+   let userId  = req.params.id;
+  let {
+      fullname,
+      cellphoneNumber,
+      email,
+      hpcnaNumber,
+      address,
+      gender,
+      hpcnaExpiryDate,
+      specializations,
+      yearsOfExperience,
+      operationalZone,
+      governingCouncil,
+      bio
+    } = req.body;
+
+    if (!fullname) {
+      return res
+        .status(400)
+        .json({ message: "Fullname is required." });
+    }
+    if (!cellphoneNumber) {
+      return res
+        .status(400)
+        .json({ message: "Cellphone number is required." });
+    }
+    if (!isValidCellphoneNumber(cellphoneNumber)) {
+          return res.status(400).json({ message: "Oops! That doesn’t look like a valid cellphone number. Please check and try again." });
+        }
+    if (!email) {
+      return res
+        .status(400)
+        .json({ message: "Email is required." });
+    }
+    if (!specializations || specializations.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Specialization is required." });
+    }
+    if (!governingCouncil) {
+      return res
+        .status(400)
+        .json({ message: "Governing council is required." });
+    }
+    if (!hpcnaNumber) {
+      return res
+        .status(400)
+        .json({ message: "HPCNA number is required." });
+    }
+    if (!bio) {
+      return res
+        .status(400)
+        .json({ message: "Professional bio is required." });
+    }
+    if (!hpcnaExpiryDate) {
+      return res
+        .status(400)
+        .json({ message: "HPCNA expiry date is required." });
+    }
+
+    if (!yearsOfExperience) {
+      return res
+        .status(400)
+        .json({ message: "Years of experience is required." });
+    }
+    if (!operationalZone) {
+      return res
+        .status(400)
+        .json({ message: "Operational zone is required." });
+    }
+    if (!gender) {
+      return res
+        .status(400)
+        .json({ message: "Gender is required." });
+    }
+  try{
+    const existingUser = await User.findById(userId);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    existingUser.fullname = fullname;
+    existingUser.cellphoneNumber = cellphoneNumber;
+    existingUser.email =  email;
+    existingUser.address = address
+    existingUser.gender = gender;
+    existingUser.bio = bio;
+    existingUser.hpcnaNumber = hpcnaNumber;
+    existingUser.hpcnaExpiryDate = hpcnaExpiryDate;
+    existingUser.specializations = specializations;
+    existingUser.yearsOfExperience = yearsOfExperience;
+    existingUser.operationalZone = operationalZone;
+    existingUser.governingCouncil = governingCouncil;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your profile details have been updated successfully.",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.changePassword = async (req, res) => {
+  let userId  = req.params.id;
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  if (!userId) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+     if (!currentPassword) {
+      return res
+        .status(400)
+        .json({ message: "Current password is required." });
+    }
+     if (!newPassword) {
+      return res
+        .status(400)
+        .json({ message: "New password is required." });
+    }
+    if (!confirmPassword) {
+      return res
+        .status(400)
+        .json({ message: "Confirm password is required." });
+    }
+    if(currentPassword.toLowerCase() === newPassword.toLowerCase()) {
+      return res
+        .status(400)
+        .json({ message: "New password must be different from the current password." });
+    }
+    if( newPassword.toLowerCase() !== confirmPassword.toLowerCase()) {
+      return res
+        .status(400)
+        .json({ message: "New password and confirm password do not match." });
+    }
+    const result = validatePassword(newPassword);
+    
+        if (!result.valid) {
+      
+            return res
+                    .status(400)
+                    .json({ message: result?.message });
+            }
+  try{
+    const existingUser = await User.findById(userId);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, existingUser.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        status: false,
+        message: "The current password you entered is incorrect. Please try again.",
+      });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    existingUser.password = hashedPassword;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your password has been changed successfully.",
+    });
+  }catch (error) {
+    console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
   }
 }
