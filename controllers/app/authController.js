@@ -676,13 +676,9 @@ if (!id) {
 
 exports.updateProfileImage = async (req, res) => {
   const { id } = req.params;
-  const files = req.files;
 
-  let profileImagePath = files.profileImage
-      ? files.profileImage[0].filename
-      : null;
+  let profileImagePath = req.file ? req.file.filename : null;
       
-
 if (!id) {
       return res
         .status(400)
@@ -718,6 +714,84 @@ if (!id) {
       status: true,
       message: "Your profile image has been updated successfully",
     });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updatePatientDetails = async (req, res) => {
+  let userId  = req.params.id;
+  const {
+      fullname,
+      cellphoneNumber,
+      email,
+      dateOfBirth,
+      gender,
+      nationalId,
+      address,
+      town,
+      region,
+    } = req.body;
+
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+     if (!fullname) {
+      return res
+        .status(400)
+        .json({ message: "Full name is required." });
+    }
+    if (!cellphoneNumber) {
+      return res
+        .status(400)
+        .json({ message: "Cellphone number is required." });
+    }
+
+    if (!email) {
+      return res
+        .status(400)
+        .json({ message: "Email is required." });
+    }
+    if (!dateOfBirth) {
+      return res
+        .status(400)
+        .json({ message: "Date of birth is required." });
+    }
+    if (!address) {
+      return res
+        .status(400)
+        .json({ message: "Address is required." });
+    }
+    if (!town) {
+      return res
+        .status(400)
+        .json({ message: "Town is required." });
+    }
+    
+    if (!region) {
+      return res
+        .status(400)
+        .json({ message: "Region is required." });
+    }
+    if (!gender) {
+      return res
+        .status(400)
+        .json({ message: "Gender is required." });
+    }
+    if (!nationalId) {
+      return res
+        .status(400)
+        .json({ message: "National ID number is required." });
+    }
+
+    if (!isValidCellphoneNumber(cellphoneNumber)) {
+      return res.status(400).json({ message: "Oops! That doesn’t look like a valid cellphone number. Please check and try again." });
+    }
+  try{
+
   }catch (error) {
     console.error("Error registering patient:", error);
     res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });

@@ -71,6 +71,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
+  nationalId:{
+    type: String,
+    required: true,
+  },
   region: {
     type: String,
     required: false,

@@ -10,6 +10,6 @@ authRouter.post("/forgot-password-verify-otp", verifyOtpReset);
 authRouter.post("/forgot-password-reset/:id", resetPassword);
 authRouter.post("/login", login);
 authRouter.delete("/remove-profile-image/:id", removeProfileImage);
-authRouter.patch("/upload-profile-image/:id", updateProfileImage);
+authRouter.patch("/upload-profile-image/:id",uploadSingle, updateProfileImage);
 
 module.exports = authRouter;
