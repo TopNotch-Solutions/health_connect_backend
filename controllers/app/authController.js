@@ -830,7 +830,7 @@ exports.updatePatientDetails = async (req, res) => {
   }
 }
 
-exports.registerHealthProvider = async (req, res) => {
+exports.updateHealthProvider = async (req, res) => {
    let userId  = req.params.id;
   let {
       fullname,
@@ -1006,6 +1006,190 @@ exports.changePassword = async (req, res) => {
     });
   }catch (error) {
     console.error("Error verifying OTP:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updateIDFront = async (req, res) => {
+   const { id } = req.params;
+
+  let imagePath = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "ID front is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.idDocumentFront) {
+      const oldImagePath = path.join("public", "images", existingUser.idDocumentFront);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.idDocumentFront = imagePath;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your ID front has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updateIDBack = async (req, res) => {
+   const { id } = req.params;
+
+  let imagePath = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "ID back is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.idDocumentBack) {
+      const oldImagePath = path.join("public", "images", existingUser.idDocumentBack);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.idDocumentBack = imagePath;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your ID back has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updatePrimaryQualification = async (req, res) => {
+   const { id } = req.params;
+
+  let imagePath = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "Primary qualification is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.primaryQualification) {
+      const oldImagePath = path.join("public", "images", existingUser.primaryQualification);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.primaryQualification = imagePath;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your primary qualification has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updateAnnualQualification = async (req, res) => {
+   const { id } = req.params;
+
+  let imagePath = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "Annual qualification is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if (existingUser.annualQualification) {
+      const oldImagePath = path.join("public", "images", existingUser.annualQualification);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.annualQualification = imagePath;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your annual qualification has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
     res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
   }
 }
