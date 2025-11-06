@@ -520,11 +520,17 @@ exports.login = async (req, res) => {
         .json({ message: "Password is required." });
     }
   try{
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email, });
 
     if (!user) {
       return res.status(404).json({
         message: "We couldn’t sign you in. Please check your username and password, then try again.",
+      });
+    }
+    if(user.accountDeactivation) {
+      return res.status(403).json({
+        status: false,
+        message: "Your account is currently deactivated. Kindly verify your account to get started.",
       });
     }
 
@@ -633,6 +639,7 @@ exports.login = async (req, res) => {
         walletID: user.walletID,
         userId: user._id,
         gender: user.gender,
+        nationalId: user.nationalId,
         dateOfBirth: user.dateOfBirth,
         balance: user.balance,
         profileImage: user.profileImage,
@@ -1187,6 +1194,32 @@ if (!id) {
     res.status(200).json({
       status: true,
       message: "Your annual qualification has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.deactivateAccount = async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+  try{
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    existingUser.accountDeactivation = true;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your account has been deactivated successfully.",
     });
   }catch (error) {
     console.error("Error registering patient:", error);

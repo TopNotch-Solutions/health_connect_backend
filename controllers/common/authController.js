@@ -82,6 +82,8 @@ exports.verifyOtp = async (req, res) => {
     console.log("My acccount number: ", accountAlreadyExists)
     if (accountAlreadyExists) {
       await OTP.deleteMany({ cellphoneNumber });
+      accountAlreadyExists.accountDeactivation = false;
+      await accountAlreadyExists.save();
       return res.status(200).json({
         activeUser: true,
         message: "Looks like you’re already registered and verified. Please log in to continue.",

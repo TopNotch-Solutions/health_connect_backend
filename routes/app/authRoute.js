@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
@@ -16,6 +16,7 @@ authRouter.post("/login", login);
 authRouter.delete("/remove-profile-image/:id", removeProfileImage);
 authRouter.put("/update-patient-details/:id", updatePatientDetails);
 authRouter.patch("/change-password/:id", changePassword);
+authRouter.patch("/deactivate-account/:id", deactivateAccount);
 authRouter.put("/update-health-provider-details/:id", updateHealthProvider);
 authRouter.patch("/upload-profile-image/:id",uploadSingle, updateProfileImage);
 authRouter.patch("/update-id-front/:id",uploadIdFront.uploadSingleFront, updateIDFront);
