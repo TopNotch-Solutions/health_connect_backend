@@ -15,6 +15,10 @@ const issueSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    issueImage: {
+      type: String,
+      required: false,
+    },
     status: {
       type: String,
       enum: ["Open", "Closed", "In Progress"],

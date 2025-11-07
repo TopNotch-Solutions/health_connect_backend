@@ -19,6 +19,8 @@ const io = new Server(server, {
 const authRouter = require("./routes/common/authRoute");
 const authAppRouter = require("./routes/app/authRoute");
 const issueAppRouter = require("./routes/app/issueRoute");
+const notificationAppRouter = require("./routes/app/notificationRouter");
+const transactionAppRouter = require("./routes/app/transactionRoute");
 
 
 app.use(express.static("public"));
@@ -36,6 +38,8 @@ app.use(
 app.use("/api/auth", authRouter);
 app.use("/api/app/auth", authAppRouter);
 app.use("/api/app/issue", issueAppRouter);
+app.use("/api/app/notification", notificationAppRouter);
+app.use("/api/app/transaction", transactionAppRouter);
 
 mongoose
   .connect(process.env.MONGO_URI, {
