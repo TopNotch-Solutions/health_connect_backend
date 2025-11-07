@@ -7,6 +7,7 @@ const walletIDGenerator = require("../../utils/walletGenerator");
 const { validatePassword } = require("../../utils/validatePassword");
 const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
+const Notification = require("../../models/notification");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -128,7 +129,7 @@ exports.registerPatient = async (req, res) => {
             "We’re having trouble processing your request. Please try again shortly.",
         });
     }
-    await User.create({
+   const newUser = await User.create({
       fullname,
       cellphoneNumber,
       email,
@@ -145,7 +146,13 @@ exports.registerPatient = async (req, res) => {
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
     });
-
+     await Notification.createNotification({
+      userId: newUser._id,
+      type: "welcome",
+      title: "Welcome to Our Health Platform!",
+      status: "sent",
+      message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
+      });
     res.status(201).json({
       status: true,
       message: "Patient registration completed successfully.",
@@ -351,7 +358,7 @@ exports.registerHealthProvider = async (req, res) => {
     }
     const newRole = role.toLowerCase();
     
-    await User.create({
+   const newUser = await User.create({
       fullname,
       cellphoneNumber,
       email,
@@ -376,7 +383,13 @@ exports.registerHealthProvider = async (req, res) => {
       isAccountVerified: true,
       isDocumentsSubmitted: true,
     });
-
+    await Notification.createNotification({
+      userId: newUser._id,
+      type: "welcome",
+      title: "Welcome to Our Health Platform!",
+      status: "sent",
+      message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
+      });
     res.status(201).json({
       status: true,
       message: "Health provider registration completed successfully.",
@@ -631,7 +644,7 @@ exports.login = async (req, res) => {
      return res.status(200).json({
       status: true,
       message: "You have logged in successfully.",
-      user:{
+      user:user.role === "patient" ? {
         fullname: user.fullname,
         email: user.email,
         role: user.role,
@@ -639,6 +652,7 @@ exports.login = async (req, res) => {
         walletID: user.walletID,
         userId: user._id,
         gender: user.gender,
+        isPushNotificationEnabled: user.isPushNotificationEnabled,
         nationalId: user.nationalId,
         dateOfBirth: user.dateOfBirth,
         balance: user.balance,
@@ -647,6 +661,35 @@ exports.login = async (req, res) => {
         region: user.region,
         town: user.town,
         isAccountVerified: user.isAccountVerified,
+      }: {
+        fullname: user.fullname,
+        email: user.email,
+        role: user.role,
+        cellphoneNumber: user.cellphoneNumber,
+        walletID: user.walletID,
+        userId: user._id,
+        gender: user.gender,
+        isPushNotificationEnabled: user.isPushNotificationEnabled,
+        nationalId: user.nationalId,
+        dateOfBirth: user.dateOfBirth,
+        profileImage: user.profileImage,
+        address: user.address,
+        region: user.region,
+        town: user.town,
+        isAccountVerified: user.isAccountVerified,
+        isDocumentsSubmitted: user.isDocumentsSubmitted,
+        isDocumentVerified: user.isDocumentVerified,
+        bio: user.bio,
+        hpcnaNumber: user.hpcnaNumber,
+        hpcnaExpiryDate: user.hpcnaExpiryDate,
+        specializations: user.specializations,
+        yearsOfExperience: user.yearsOfExperience,
+        operationalZone: user.operationalZone,
+        governingCouncil: user.governingCouncil,
+        annualQualification: user.annualQualification,
+        primaryQualification: user.primaryQualification,
+        idDocumentFront: user.idDocumentFront,
+        idDocumentBack: user.idDocumentBack,
       }
     });
   }catch (error) {
@@ -728,6 +771,9 @@ if (!id) {
     }
 
     existingUser.profileImage = profileImagePath;
+    if(existingUser.role !== "patient"){
+      existingUser.isDocumentVerified = false;
+    }
     await existingUser.save();
     res.status(200).json({
       status: true,
@@ -1052,6 +1098,7 @@ if (!id) {
     }
 
     existingUser.idDocumentFront = imagePath;
+    existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
@@ -1098,6 +1145,7 @@ if (!id) {
     }
 
     existingUser.idDocumentBack = imagePath;
+    existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
@@ -1144,6 +1192,7 @@ if (!id) {
     }
 
     existingUser.primaryQualification = imagePath;
+    existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
@@ -1190,6 +1239,7 @@ if (!id) {
     }
 
     existingUser.annualQualification = imagePath;
+    existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
