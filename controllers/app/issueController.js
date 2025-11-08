@@ -82,7 +82,7 @@ exports.all = async (req, res) => {
         data: [],
       });
     }
-    return res.status(201).json({
+    return res.status(200).json({
       message: "Great! Your issues have been retrieved successfully.",
       data: allIssuesUser,
     });

@@ -41,19 +41,17 @@ exports.fundOwnWallet = async (req, res) => {
       time: new Date(),
       referrence,
       type: "deposit",
-      status: "pending",
+      status: "completed",
     });
 
     user.PreviousBalance = user.balance;
     user.balance = user.balance + parseFloat(amount);
     await user.save();
 
-    const userUpdated = await User.findOne({ _id: id });
-    const data = await Transaction.find({userId: id});
+    const userUpdated = await User.findOne({ _id: id }).select('-password -verifiedCellphoneNumber');
     return res.status(201).json({
       message: "Fund successfully deposited into own wallet.",
-      user: userUpdated,
-      data
+      user: userUpdated
     });
   } catch (error) {
     console.log(error);
@@ -113,19 +111,16 @@ exports.fundSomeonesWallet = async (req, res) => {
       time: new Date(),
       referrence,
       type: "deposit",
-      status: "pending",
+      status: "completed",
     });
     
     userFunded.PreviousBalance = userFunded.balance;
     userFunded.balance = userFunded.balance + parseFloat(amount);
     await userFunded.save();
 
-    const userUpdated = await User.findOne({ _id: id });
     const data = await Transaction.find({userId: id});
     return res.status(201).json({
       message: "Transaction created successfully.",
-       user: userUpdated, 
-      data
     });
   } catch (error) {
     res.status(500).json({ message: "Internal server error"+ error });
@@ -188,11 +183,9 @@ exports.wallet2Wallet = async (req, res) => {
     await userFunded.save();
 
     const userUpdated = await User.findOne({ _id: id });
-    const data = await Transaction.find({userId: id});
-    return res.status(200).json({
+    return res.status(201).json({
       message: "Transaction created successfully.",
        user: userUpdated, 
-      data
     });
   } catch (error) {
     res.status(500).json({ message: "Internal server error"+ error });
@@ -200,13 +193,10 @@ exports.wallet2Wallet = async (req, res) => {
 };
 exports.withdrawal = async (req, res) => {
   const { id } = req.params;
-  const { amount, walletID } = req.body;
+  const { amount } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
-  }
-  if (!walletID) {
-    return res.status(400).json({ message: "Wallet id is required" });
   }
   if (!amount) {
     return res.status(400).json({ message: "Amount is required" });
@@ -233,7 +223,7 @@ exports.withdrawal = async (req, res) => {
     await Transaction.create({
       userId: id,
       amount: amount,
-      walletID,
+      walletID: user.walletID,
       time: new Date(),
       referrence,
       type: "withdrawal",
@@ -245,11 +235,9 @@ exports.withdrawal = async (req, res) => {
     await user.save();
 
     const userUpdated = await User.findOne({ _id: id });
-    const data = await Transaction.find({userId: id});
-    return res.status(200).json({
+    return res.status(201).json({
       message: "Transaction created successfully.",
        user: userUpdated, 
-      data
     });
   } catch (error) {
     res.status(500).json({ message: "Internal server error"+ error });

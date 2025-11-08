@@ -45,14 +45,9 @@ exports.getUnReadCount = async (req, res) => {
 };
 exports.markNotificationsAsRead = async (req, res) => {
   const { id } = req.params;
-  const { notificationIds } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User ID is required." });
-  }
-
-  if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
-    return res.status(400).json({ message: "Notification IDs are required." });
   }
 
   try {
@@ -64,7 +59,6 @@ exports.markNotificationsAsRead = async (req, res) => {
     }
 
     const notifications = await Notification.find({
-      _id: { $in: notificationIds },
       userId: id,
     });
 
@@ -72,7 +66,7 @@ exports.markNotificationsAsRead = async (req, res) => {
       return res.status(404).json({ message: "No matching notifications found." });
     }
     await Notification.updateMany(
-      { _id: { $in: notificationIds }, userId: id },
+      { userId: id },
       { $set: { status: "read", readAt: new Date() } }
     );
 
