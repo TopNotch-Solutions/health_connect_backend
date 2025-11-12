@@ -6,9 +6,10 @@ const uploadIdFront = require('../../middlewares/uploadIdFront');
 const uploadannualQualification = require('../../middlewares/uploadannualQualification');
 const uploadprimaryQualification = require('../../middlewares/uploadprimaryQualification');
 const { uploadSingleBack } = require('../../middlewares/uploadIdBack');
+const { uploadMultiple } = require('../../middlewares/uploadIDDocument');
 const authRouter = Router();
 
-authRouter.post("/register-patient", uploadSingle, registerPatient);
+authRouter.post("/register-patient", uploadMultiple, registerPatient);
 authRouter.post("/register-health-provider", uploadMultipleDocuments, registerHealthProvider);
 authRouter.post("/forgot-password-verify-otp", verifyOtpReset);
 authRouter.post("/forgot-password-reset/:id", resetPassword);

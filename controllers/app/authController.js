@@ -22,8 +22,19 @@ exports.registerPatient = async (req, res) => {
       town,
       region,
     } = req.body;
+    const files = req.files;
 
-    let profileImagePath = req.file ? req.file.filename : null;
+    let profileImagePath = files.profileImage
+      ? files.profileImage[0].filename
+      : null;
+
+      let idDocumentFront = files.idDocumentFront
+      ? files.idDocumentFront[0].filename
+      : null;
+
+      let idDocumentBack = files.idDocumentBack
+      ? files.idDocumentBack[0].filename
+      : null;
     if (!fullname) {
       return res
         .status(400)
@@ -87,6 +98,16 @@ exports.registerPatient = async (req, res) => {
     if (!isValidCellphoneNumber(cellphoneNumber)) {
       return res.status(400).json({ message: "Oops! That doesn’t look like a valid cellphone number. Please check and try again." });
     }
+    if (!idDocumentFront) {
+      return res
+        .status(400)
+        .json({ message: "ID front is required." });
+    }
+     if (!idDocumentBack) {
+      return res
+        .status(400)
+        .json({ message: "ID back is required." });
+    }
   try {
     
     const existingUser = await User.findOne({
@@ -143,6 +164,8 @@ exports.registerPatient = async (req, res) => {
       town,
       region,
       profileImage: profileImagePath,
+      idDocumentFront,
+      idDocumentBack,
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
     });
