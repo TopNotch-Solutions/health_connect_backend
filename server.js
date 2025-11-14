@@ -24,6 +24,8 @@ const transactionAppRouter = require("./routes/app/transactionRoute");
 const specializationAppRouter = require("./routes/app/specializationRoute");
 const specializationPortalRouter = require("./routes/portal/specializationRoute");
 const aligmentPortalRouter = require("./routes/portal/aligmentRoute");
+const faqPortalRouter = require("./routes/portal/faqRoute");
+const faqAppRouter = require("./routes/app/faqRoute");
 
 
 app.use(express.static("public"));
@@ -46,6 +48,8 @@ app.use("/api/app/transaction", transactionAppRouter);
 app.use("/api/app/specialization", specializationAppRouter);
 app.use("/api/portal/specialization", specializationPortalRouter);
 app.use("/api/portal/aligment", aligmentPortalRouter);
+app.use("/api/portal/faq", faqPortalRouter);
+app.use("/api/app/faq", faqAppRouter);
 
 mongoose
   .connect(process.env.MONGO_URI, {
