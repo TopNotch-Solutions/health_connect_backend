@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: [process.env.LOCAL_HOST_1, process.env.LOCAL_HOST_2],
-    methods: ["GET", "POST", "DELETE", "PUT"],
+    methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   },
 });
 
@@ -26,6 +26,10 @@ const specializationPortalRouter = require("./routes/portal/specializationRoute"
 const aligmentPortalRouter = require("./routes/portal/aligmentRoute");
 const faqPortalRouter = require("./routes/portal/faqRoute");
 const faqAppRouter = require("./routes/app/faqRoute");
+const notificationPortalRouter = require("./routes/portal/notificationRoute");
+
+
+const authPortalRouter = require("./routes/portal/authController");
 
 
 app.use(express.static("public"));
@@ -35,7 +39,7 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: [process.env.LOCAL_HOST_1, process.env.LOCAL_HOST_2],
-    methods: ["GET", "POST", "DELETE", "PUT"],
+    methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
     credentials: true,
   })
 );
@@ -50,6 +54,10 @@ app.use("/api/portal/specialization", specializationPortalRouter);
 app.use("/api/portal/aligment", aligmentPortalRouter);
 app.use("/api/portal/faq", faqPortalRouter);
 app.use("/api/app/faq", faqAppRouter);
+app.use("/api/portal/notification", notificationPortalRouter);
+
+app.use("/api/portal/auth", authPortalRouter);
+
 
 mongoose
   .connect(process.env.MONGO_URI, {

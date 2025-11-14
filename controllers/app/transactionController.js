@@ -265,3 +265,13 @@ exports.all = async (req, res) => {
     res.status(500).json({ message: "Internal server error", error });
   }
 };
+
+exports.getAllTransactions = async (req, res) => {
+  try {
+    const transactions = await Transaction.find().populate('userId', 'fullname email walletID').sort({ time: -1 });
+    res.status(200).json({ status: true, transactions });
+  } catch (error) {
+    console.error("Error fetching all transactions:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};

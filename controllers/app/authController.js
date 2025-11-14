@@ -8,6 +8,7 @@ const { validatePassword } = require("../../utils/validatePassword");
 const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
+const NotificationPortal = require("../../models/notificationPortal");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -176,6 +177,16 @@ exports.registerPatient = async (req, res) => {
       status: "sent",
       message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
       });
+      const allPortalUsers = await NotificationPortal.find();
+      if(allPortalUsers && allPortalUsers.length > 0) {
+        for(const portalUserNotification of allPortalUsers) {
+          await NotificationPortal.create({
+            userId: portalUserNotification.userId,
+            title: "New Patient Registered",
+            message: `A new patient, ${newUser.fullname}, has just registered on the platform.`,
+          });
+        }
+      }
     res.status(201).json({
       status: true,
       message: "Patient registration completed successfully.",
@@ -413,6 +424,16 @@ exports.registerHealthProvider = async (req, res) => {
       status: "sent",
       message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
       });
+      const allPortalUsers = await NotificationPortal.find();
+      if(allPortalUsers && allPortalUsers.length > 0) {
+        for(const portalUserNotification of allPortalUsers) {
+          await NotificationPortal.create({
+            userId: portalUserNotification.userId,
+            title: "New health provider has registered",
+            message: `A new health provider, ${newUser.fullname}, has just registered on the platform. Kindly review their details.`,
+          });
+        }
+      }
     res.status(201).json({
       status: true,
       message: "Health provider registration completed successfully.",
@@ -1274,6 +1295,16 @@ if (!id) {
   }
 }
 
+exports.getAllAppUsers = async (req, res) => {
+  try {
+    const users = await User.find().select('-password -verifiedCellphoneNumber').sort({ createdAt: -1 });
+    res.status(200).json({ status: true, users });
+  } catch (error) {
+    console.error("Error fetching app users:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
 exports.deactivateAccount = async (req, res) => {
   const { id } = req.params;
   if (!id) {
@@ -1285,7 +1316,7 @@ exports.deactivateAccount = async (req, res) => {
     const existingUser = await User.findById(id);
     if (!existingUser) {
       return res.status(404).json({
-        message: "It seems you don’t have an account yet. Please register to get started.",
+        message: "It seems you don't have an account yet. Please register to get started.",
       });
     }
     existingUser.accountDeactivation = true;
@@ -1296,6 +1327,114 @@ exports.deactivateAccount = async (req, res) => {
     });
   }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 }
+
+exports.approveHealthProviderDocuments = async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+  try {
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+    
+    // Check if user is a health provider
+    const healthProviderRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
+    if (!healthProviderRoles.includes(existingUser.role)) {
+      return res.status(400).json({
+        message: "This user is not a health provider.",
+      });
+    }
+
+    // Check if documents are submitted
+    if (!existingUser.isDocumentsSubmitted) {
+      return res.status(400).json({
+        message: "Documents have not been submitted yet.",
+      });
+    }
+
+    // Approve documents
+    existingUser.isDocumentVerified = true;
+    await existingUser.save();
+
+    // Send approval notification
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Document Verification Approved",
+      status: "sent",
+      message: `Congratulations ${existingUser.fullname}! Your documents have been verified and approved. You can now start providing services on the platform.`,
+      priority: "high",
+    });
+
+    res.status(200).json({
+      status: true,
+      message: "Health provider documents approved successfully.",
+      user: existingUser,
+    });
+  } catch (error) {
+    console.error("Error approving documents:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
+exports.rejectHealthProviderDocuments = async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  
+  if (!id) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+  if (!reason || reason.trim() === "") {
+    return res.status(400).json({ message: "Rejection reason is required." });
+  }
+  
+  try {
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+    
+    // Check if user is a health provider
+    const healthProviderRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
+    if (!healthProviderRoles.includes(existingUser.role)) {
+      return res.status(400).json({
+        message: "This user is not a health provider.",
+      });
+    }
+
+    // Reject documents (set isDocumentVerified to false)
+    existingUser.isDocumentVerified = false;
+    await existingUser.save();
+
+    // Send rejection notification with reason
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Document Verification Rejected",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your document verification has been rejected. Reason: ${reason}. Please review your documents and resubmit them for verification.`,
+      priority: "high",
+      data: {
+        rejectionReason: reason,
+      },
+    });
+
+    res.status(200).json({
+      status: true,
+      message: "Health provider documents rejected successfully. Notification sent to user.",
+      user: existingUser,
+    });
+  } catch (error) {
+    console.error("Error rejecting documents:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};

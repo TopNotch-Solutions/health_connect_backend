@@ -88,6 +88,16 @@ exports.all = async (req, res) => {
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
+exports.getAllIssues = async (req, res) => {
+  try {
+    const issues = await Issue.find().populate('userId', 'fullname email cellphoneNumber').sort({ date: -1 });
+    res.status(200).json({ status: true, issues });
+  } catch (error) {
+    console.error("Error fetching all issues:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 };
