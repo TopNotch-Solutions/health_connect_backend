@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path")
 
 exports.create_portal_user = async (req, res) => {
-    const { firstName, lastName, cellphoneNumber, email, password, role, profileImage, addedBy,department } = req.body;
+    const { firstName, lastName, cellphoneNumber, email, password, role, profileImage, addedBy, department, permissions } = req.body;
     if (!firstName) {
       return res
         .status(400)
@@ -63,6 +63,14 @@ exports.create_portal_user = async (req, res) => {
           .json({ message: "A user with this email already exists." });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Set default permissions if not provided
+      const userPermissions = permissions || {
+        read: true,
+        write: false,
+        delete: false,
+      };
+      
       const newUser = new PortalUser({
         firstName,
         lastName,
@@ -73,6 +81,11 @@ exports.create_portal_user = async (req, res) => {
         department,
         profileImage: profileImage || null,
         addedBy: addedBy || "Testing Admin",
+        permissions: {
+          read: userPermissions.read !== undefined ? userPermissions.read : true,
+          write: userPermissions.write !== undefined ? userPermissions.write : false,
+          delete: userPermissions.delete !== undefined ? userPermissions.delete : false,
+        },
       });
       await newUser.save();
       res.status(201).json({ message: "Portal user created successfully" });
@@ -313,7 +326,7 @@ exports.getDashboardStats = async (req, res) => {
 
 exports.updatePortalUser = async (req, res) => {
   const { id } = req.params;
-  const { firstName, lastName, email, cellphoneNumber, department } = req.body;
+  const { firstName, lastName, email, cellphoneNumber, department, permissions } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User ID is required." });
@@ -362,6 +375,15 @@ exports.updatePortalUser = async (req, res) => {
     existingUser.email = email;
     existingUser.cellphoneNumber = cellphoneNumber;
     existingUser.department = department;
+
+    // Update permissions if provided
+    if (permissions !== undefined) {
+      existingUser.permissions = {
+        read: permissions.read !== undefined ? permissions.read : existingUser.permissions.read,
+        write: permissions.write !== undefined ? permissions.write : existingUser.permissions.write,
+        delete: permissions.delete !== undefined ? permissions.delete : existingUser.permissions.delete,
+      };
+    }
 
     await existingUser.save();
 
@@ -494,5 +516,50 @@ exports.updatePortalUserProfileImage = async (req, res) => {
   } catch (error) {
     console.error("Error updating portal user profile image:", error);
     res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
+exports.deletePortalUser = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ 
+      status: false,
+      message: "User ID is required." 
+    });
+  }
+
+  try {
+    const existingUser = await PortalUser.findById(id);
+    if (!existingUser) {
+      return res.status(404).json({ 
+        status: false,
+        message: "User not found." 
+      });
+    }
+
+    // Delete profile image if it exists
+    if (existingUser.profileImage) {
+      const imagePath = path.join("public", "images", existingUser.profileImage);
+      if (fs.existsSync(imagePath)) {
+        console.log("Removing profile image:", imagePath);
+        fs.unlinkSync(imagePath);
+      }
+    }
+
+    // Delete the user
+    await PortalUser.findByIdAndDelete(id);
+
+    res.status(200).json({
+      status: true,
+      message: "Administrator deleted successfully."
+    });
+  } catch (error) {
+    console.error("Error deleting portal user:", error);
+    res.status(500).json({ 
+      status: false,
+      message: "We're having trouble processing your request. Please try again shortly.", 
+      error 
+    });
   }
 };

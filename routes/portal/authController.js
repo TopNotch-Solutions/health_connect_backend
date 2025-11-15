@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { create_portal_user, login, getAllPortalUsers, getDashboardStats, updatePortalUser, updatePortalUserPassword, updatePortalUserProfileImage } = require('../../controllers/portal/authController');
+const { create_portal_user, login, getAllPortalUsers, getDashboardStats, updatePortalUser, updatePortalUserPassword, updatePortalUserProfileImage, deletePortalUser } = require('../../controllers/portal/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 
 const authPortalRouter = Router();
@@ -35,5 +35,6 @@ authPortalRouter.get('/dashboard-stats', getDashboardStats);
 authPortalRouter.put('/update-user/:id', updatePortalUser);
 authPortalRouter.put('/update-password/:id', updatePortalUserPassword);
 authPortalRouter.patch('/upload-profile-image/:id', uploadSingle, handleMulterError, updatePortalUserProfileImage);
+authPortalRouter.delete('/delete-user/:id', deletePortalUser);
 
 module.exports = authPortalRouter;

@@ -1343,20 +1343,32 @@ exports.approveHealthProviderDocuments = async (req, res) => {
         message: "User not found.",
       });
     }
-    
-    // Check if user is a health provider
+
+    // Check if user is a health provider or patient
     const healthProviderRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
-    if (!healthProviderRoles.includes(existingUser.role)) {
+    const isHealthProvider = healthProviderRoles.includes(existingUser.role);
+    const isPatient = existingUser.role === "patient";
+
+    if (!isHealthProvider && !isPatient) {
       return res.status(400).json({
-        message: "This user is not a health provider.",
+        message: "Document verification is only available for patients and health providers.",
       });
     }
 
-    // Check if documents are submitted
-    if (!existingUser.isDocumentsSubmitted) {
+    // For health providers, check if documents are submitted
+    if (isHealthProvider && !existingUser.isDocumentsSubmitted) {
       return res.status(400).json({
         message: "Documents have not been submitted yet.",
       });
+    }
+
+    // For patients, check if ID documents and profile image are present
+    if (isPatient) {
+      if (!existingUser.idDocumentFront || !existingUser.idDocumentBack || !existingUser.profileImage) {
+        return res.status(400).json({
+          message: "Patient must have ID front, ID back, and profile image submitted.",
+        });
+      }
     }
 
     // Approve documents
@@ -1364,18 +1376,24 @@ exports.approveHealthProviderDocuments = async (req, res) => {
     await existingUser.save();
 
     // Send approval notification
+    const message = isHealthProvider
+      ? `Congratulations ${existingUser.fullname}! Your documents have been verified and approved. You can now start providing services on the platform.`
+      : `Congratulations ${existingUser.fullname}! Your documents have been verified and approved. Your account is now fully verified.`;
+
     await Notification.createNotification({
       userId: existingUser._id,
       type: "alert",
       title: "Document Verification Approved",
       status: "sent",
-      message: `Congratulations ${existingUser.fullname}! Your documents have been verified and approved. You can now start providing services on the platform.`,
+      message: message,
       priority: "high",
     });
 
     res.status(200).json({
       status: true,
-      message: "Health provider documents approved successfully.",
+      message: isHealthProvider 
+        ? "Health provider documents approved successfully."
+        : "Patient documents approved successfully.",
       user: existingUser,
     });
   } catch (error) {
@@ -1402,26 +1420,34 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
         message: "User not found.",
       });
     }
-    
-    // Check if user is a health provider
+
+    // Check if user is a health provider or patient
     const healthProviderRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
-    if (!healthProviderRoles.includes(existingUser.role)) {
+    const isHealthProvider = healthProviderRoles.includes(existingUser.role);
+    const isPatient = existingUser.role === "patient";
+
+    if (!isHealthProvider && !isPatient) {
       return res.status(400).json({
-        message: "This user is not a health provider.",
+        message: "Document verification is only available for patients and health providers.",
       });
     }
 
     // Reject documents (set isDocumentVerified to false)
+    const wasVerified = existingUser.isDocumentVerified;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
 
     // Send rejection notification with reason
+    const rejectionMessage = wasVerified
+      ? `Dear ${existingUser.fullname}, your previously approved document verification has been rejected by the admin. Reason: ${reason}. Please review your documents and contact support if you have any questions.`
+      : `Dear ${existingUser.fullname}, your document verification has been rejected. Reason: ${reason}. Please review your documents and resubmit them for verification.`;
+
     await Notification.createNotification({
       userId: existingUser._id,
       type: "alert",
-      title: "Document Verification Rejected",
+      title: wasVerified ? "Document Verification Revoked" : "Document Verification Rejected",
       status: "sent",
-      message: `Dear ${existingUser.fullname}, your document verification has been rejected. Reason: ${reason}. Please review your documents and resubmit them for verification.`,
+      message: rejectionMessage,
       priority: "high",
       data: {
         rejectionReason: reason,
@@ -1430,7 +1456,9 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Health provider documents rejected successfully. Notification sent to user.",
+      message: isHealthProvider
+        ? "Health provider documents rejected successfully. Notification sent to user."
+        : "Patient documents rejected successfully. Notification sent to user.",
       user: existingUser,
     });
   } catch (error) {

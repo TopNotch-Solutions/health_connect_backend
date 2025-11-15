@@ -38,6 +38,23 @@ const userPortalSchema = new mongoose.Schema({
   addedBy: {
     type: String,
     required: false,
+  },
+  permissions: {
+    read: {
+      type: Boolean,
+      default: true,
+      required: true,
+    },
+    write: {
+      type: Boolean,
+      default: false,
+      required: true,
+    },
+    delete: {
+      type: Boolean,
+      default: false,
+      required: true,
+    },
   }
 });
 
