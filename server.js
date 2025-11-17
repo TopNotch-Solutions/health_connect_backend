@@ -30,6 +30,8 @@ const notificationPortalRouter = require("./routes/portal/notificationRoute");
 
 
 const authPortalRouter = require("./routes/portal/authController");
+const requestPortalRouter = require("./routes/portal/requestRoute");
+const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
@@ -60,6 +62,7 @@ app.use("/api/app/faq", faqAppRouter);
 app.use("/api/portal/notification", notificationPortalRouter);
 
 app.use("/api/portal/auth", authPortalRouter);
+app.use("/api/portal/request", requestPortalRouter);
 
 const onlineUsers = {
   patient: new Set(),
@@ -71,6 +74,12 @@ const onlineUsers = {
 
 // Store socket IDs by user role and userId for targeted messaging
 const userSockets = new Map(); // userId -> socketId
+
+// Expose socket data to request controller
+setSocketData(
+  () => onlineUsers,
+  () => userSockets
+);
 
 // Socket.io connection handling
 io.on("connection", (socket) => {

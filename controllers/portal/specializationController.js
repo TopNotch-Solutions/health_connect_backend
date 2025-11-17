@@ -13,28 +13,17 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Description is required." });
     }
-    // Ensure role is an array - convert single value to array if needed
-    let roleArray = role;
-    if (!roleArray) {
+    if (!role) {
       return res
         .status(400)
         .json({ message: "Category is required." });
     }
-    if (!Array.isArray(roleArray)) {
-      roleArray = [roleArray];
-    }
-    if (roleArray.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one category is required." });
-    }
-    // Validate each role value
+    // Validate role value
     const validRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
-    const invalidRoles = roleArray.filter(r => !validRoles.includes(r));
-    if (invalidRoles.length > 0) {
+    if (!validRoles.includes(role)) {
       return res
         .status(400)
-        .json({ message: `Invalid category values: ${invalidRoles.join(", ")}` });
+        .json({ message: `Invalid category value: ${role}` });
     }
     try {
         const existingSpecialization = await Specialization.findOne({ title });
@@ -46,7 +35,7 @@ exports.create = async (req, res) => {
         const specialization = new Specialization({
             title,
             description,
-            role: roleArray,
+            role: role,
         });
         await specialization.save();
         res.status(201).json({ message: "Specialization created successfully", specialization });
@@ -108,25 +97,19 @@ exports.updateSpecialization = async (req, res) => {
       specialization.description = description;
     }
     if (role !== undefined) {
-      // Ensure role is an array - convert single value to array if needed
-      let roleArray = role;
-      if (!Array.isArray(roleArray)) {
-        roleArray = [roleArray];
-      }
-      if (roleArray.length === 0) {
+      if (!role) {
         return res
           .status(400)
-          .json({ message: "At least one category is required." });
+          .json({ message: "Category is required." });
       }
-      // Validate each role value
+      // Validate role value
       const validRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
-      const invalidRoles = roleArray.filter(r => !validRoles.includes(r));
-      if (invalidRoles.length > 0) {
+      if (!validRoles.includes(role)) {
         return res
           .status(400)
-          .json({ message: `Invalid category values: ${invalidRoles.join(", ")}` });
+          .json({ message: `Invalid category value: ${role}` });
       }
-      specialization.role = roleArray;
+      specialization.role = role;
     }
     await specialization.save();
     res.status(200).json({ message: "Specialization updated successfully.", specialization });

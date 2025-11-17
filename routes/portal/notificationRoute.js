@@ -4,7 +4,9 @@ const {
   getUnreadPortalCount,
   markPortalNotificationAsRead,
   deletePortalNotification,
-  createPortalNotification
+  createPortalNotification,
+  sendNotificationToAllUsers,
+  sendNotificationToUser
 } = require('../../controllers/portal/notificationController');
 
 const notificationPortalRouter = Router();
@@ -14,6 +16,8 @@ notificationPortalRouter.get('/unread-count/:id', getUnreadPortalCount);
 notificationPortalRouter.put('/mark-read/:id', markPortalNotificationAsRead);
 notificationPortalRouter.delete('/delete/:id', deletePortalNotification);
 notificationPortalRouter.post('/create', createPortalNotification);
+notificationPortalRouter.post('/send-to-all-users', sendNotificationToAllUsers);
+notificationPortalRouter.post('/send-to-user', sendNotificationToUser);
 
 module.exports = notificationPortalRouter;
 

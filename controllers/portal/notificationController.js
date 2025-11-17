@@ -1,5 +1,7 @@
 const NotificationPortal = require("../../models/notificationPortal");
 const PortalUser = require("../../models/userPortal");
+const Notification = require("../../models/notification");
+const User = require("../../models/user");
 
 exports.getAllPortalNotifications = async (req, res) => {
   const { id } = req.params;
@@ -114,6 +116,95 @@ exports.createPortalNotification = async (req, res) => {
   } catch (error) {
     console.error("Error creating notification:", error);
     res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
+// Send notification to all app users
+exports.sendNotificationToAllUsers = async (req, res) => {
+  const { title, message, type } = req.body;
+  
+  if (!title) {
+    return res.status(400).json({ message: "Title is required." });
+  }
+  if (!message) {
+    return res.status(400).json({ message: "Message is required." });
+  }
+
+  try {
+    // Get all app users
+    const allUsers = await User.find().select('_id');
+    
+    if (allUsers.length === 0) {
+      return res.status(404).json({ message: "No app users found." });
+    }
+
+    // Create notifications for all users
+    const notifications = allUsers.map(user => ({
+      userId: user._id,
+      type: type || "alert",
+      title,
+      message,
+      status: "sent",
+    }));
+
+    // Insert all notifications
+    await Notification.insertMany(notifications);
+
+    res.status(201).json({ 
+      status: true, 
+      message: `Notification sent successfully to ${allUsers.length} users.`,
+      data: { count: allUsers.length }
+    });
+  } catch (error) {
+    console.error("Error sending notification to all users:", error);
+    res.status(500).json({ 
+      message: "We're having trouble processing your request. Please try again shortly.", 
+      error: error.message 
+    });
+  }
+};
+
+// Send notification to a single app user
+exports.sendNotificationToUser = async (req, res) => {
+  const { userId, title, message, type } = req.body;
+  
+  if (!userId) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+  if (!title) {
+    return res.status(400).json({ message: "Title is required." });
+  }
+  if (!message) {
+    return res.status(400).json({ message: "Message is required." });
+  }
+
+  try {
+    // Verify user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "App user not found." });
+    }
+
+    // Create notification
+    const notification = await Notification.createNotification({
+      userId,
+      type: type || "alert",
+      title,
+      message,
+      status: "sent",
+    });
+
+    res.status(201).json({ 
+      status: true, 
+      message: "Notification sent successfully.",
+      data: notification
+    });
+  } catch (error) {
+    console.error("Error sending notification to user:", error);
+    res.status(500).json({ 
+      message: "We're having trouble processing your request. Please try again shortly.", 
+      error: error.message 
+    });
   }
 };
 

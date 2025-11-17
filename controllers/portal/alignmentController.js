@@ -23,6 +23,16 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Specialization is required." });
     }
+    // Ensure specialization is an array - convert single value to array if needed
+    let specializationArray = specialization;
+    if (!Array.isArray(specializationArray)) {
+      specializationArray = [specializationArray];
+    }
+    if (specializationArray.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "At least one specialization is required." });
+    }
     try{
         const existingAilment = await AilmentCategory.findOne({ title });
         if (existingAilment) {
@@ -34,7 +44,7 @@ exports.create = async (req, res) => {
             title,
             description,
             cost,
-            specialization,
+            specialization: specializationArray,
         });
         await ailment.save();
         res.status(201).json({ message: "Ailment created successfully", ailment });
@@ -91,7 +101,17 @@ exports.updateAilment = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Specialization is required." });
-    } 
+    }
+    // Ensure specialization is an array - convert single value to array if needed
+    let specializationArray = specialization;
+    if (!Array.isArray(specializationArray)) {
+      specializationArray = [specializationArray];
+    }
+    if (specializationArray.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "At least one specialization is required." });
+    }
     try {
     const ailment = await AilmentCategory.findById(id);   
     if (!ailment) {
@@ -100,7 +120,7 @@ exports.updateAilment = async (req, res) => {
     ailment.title = title || ailment.title;
     ailment.description = description || ailment.description;
     ailment.cost = cost || ailment.cost;
-    ailment.specialization = specialization || ailment.specialization;
+    ailment.specialization = specializationArray;
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });
     }catch (error) {

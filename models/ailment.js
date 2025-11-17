@@ -15,7 +15,7 @@ const ailmentCategorySchema = new mongoose.Schema(
       required: true,
     },
     specialization: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: [mongoose.Schema.Types.ObjectId],
       ref: "specialization",
       required: true,
     },
