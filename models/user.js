@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema({
   },
   gender:{
     type: String,
-    enum: ["Male", "Female", "Other"],
+    enum: ["Male", "Female"],
     required: false,
   },
   nationalID: {
@@ -143,7 +143,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-});
+  
+},{
+    timestamps: true,
+  });
 
 const User = mongoose.model("user", userSchema);
 module.exports = User;

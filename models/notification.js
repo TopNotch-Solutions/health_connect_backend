@@ -100,15 +100,6 @@ const notificationSchema = new mongoose.Schema(
     sentAt: { type: Date },
     deliveredAt: { type: Date },
     readAt: { type: Date },
-    // Related entities
-    // relatedRequestId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "ConsultationRequest",
-    // },
-    // relatedUserId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "user",
-    // },
   },
   {
     timestamps: true,

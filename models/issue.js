@@ -31,7 +31,7 @@ const issueSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: false,
+    timestamps: true,
   }
 );
 

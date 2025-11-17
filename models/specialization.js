@@ -18,7 +18,7 @@ const specializationSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: false,
+    timestamps: true,
   }
 );
 

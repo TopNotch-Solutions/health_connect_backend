@@ -56,7 +56,9 @@ const userPortalSchema = new mongoose.Schema({
       required: true,
     },
   }
-});
+},{
+    timestamps: true,
+  });
 
 const PortalUser = mongoose.model("user_portal", userPortalSchema);
 module.exports = PortalUser;
