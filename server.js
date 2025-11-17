@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: [process.env.LOCAL_HOST_1, process.env.LOCAL_HOST_2],
+    origin: "*",
     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   },
 });
