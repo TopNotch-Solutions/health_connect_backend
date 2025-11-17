@@ -123,6 +123,7 @@ io.on("connection", (socket) => {
         symptoms,
         preferredTime,
         estimatedCost,
+        paymentMethod,
       } = data;
 
       // Active statuses where a patient is considered to have an ongoing request
@@ -176,6 +177,30 @@ io.on("connection", (socket) => {
         return;
       }
 
+      // Check wallet balance if payment method is wallet
+      if (paymentMethod === "wallet") {
+        const patient = await User.findById(validPatientId);
+        if (!patient) {
+          socket.emit("requestError", { error: "Patient not found" });
+          return;
+        }
+
+        const cost = parseFloat(estimatedCost);
+        if (isNaN(cost) || cost <= 0) {
+          socket.emit("requestError", { 
+            error: "Invalid estimated cost. Please provide a valid amount." 
+          });
+          return;
+        }
+
+        if (patient.balance < cost) {
+          socket.emit("requestError", {
+            error: `Insufficient wallet balance. Your current balance is ${patient.balance.toFixed(2)}, but the consultation cost is ${cost.toFixed(2)}. Please add funds to your wallet or select Cash payment method.`,
+          });
+          return;
+        }
+      }
+
       const request = new ConsultationRequest({
         patientId: validPatientId,
         ailmentCategoryId,
@@ -184,6 +209,7 @@ io.on("connection", (socket) => {
         symptoms,
         preferredTime,
         estimatedCost,
+        paymentMethod: paymentMethod || "wallet",
         status: "searching",
       });
 
@@ -343,6 +369,75 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Update provider response with estimated arrival
+  socket.on("updateProviderResponse", async (data) => {
+    try {
+      const { requestId, estimatedArrival, providerLocation } = data;
+      
+      if (!requestId) {
+        socket.emit("requestError", { error: "Request ID is required" });
+        return;
+      }
+
+      if (!estimatedArrival) {
+        socket.emit("requestError", { error: "Estimated arrival is required" });
+        return;
+      }
+
+      if (!providerLocation || !providerLocation.latitude || !providerLocation.longitude) {
+        socket.emit("requestError", { 
+          error: "Provider location (latitude and longitude) is required" 
+        });
+        return;
+      }
+
+      const request = await ConsultationRequest.findById(requestId);
+
+      if (!request) {
+        socket.emit("requestError", { error: "Request not found" });
+        return;
+      }
+
+      // Update providerResponse
+      request.providerResponse = {
+        responseTime: new Date(),
+        estimatedArrival: estimatedArrival,
+      };
+
+      // Initialize locationTracking if it doesn't exist
+      if (!request.locationTracking) {
+        request.locationTracking = {};
+      }
+
+      // Update provider location
+      request.locationTracking.providerLocation = {
+        latitude: providerLocation.latitude,
+        longitude: providerLocation.longitude,
+        lastUpdated: new Date(),
+      };
+
+      // Mark locationTracking as modified to ensure it's saved
+      request.markModified('locationTracking');
+
+      await request.save();
+      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("providerId", "fullname cellphoneNumber role walletID");
+      await request.populate("ailmentCategoryId");
+
+      // Notify patient
+      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientWalletId);
+      if (patientSocketId) {
+        io.to(patientSocketId).emit("requestUpdated", request);
+      }
+
+      // Notify provider
+      socket.emit("requestUpdated", request);
+    } catch (error) {
+      socket.emit("requestError", { error: error.message });
+    }
+  });
+
   // Get requests for provider
   socket.on("getProviderRequests", async (data) => {
     try {
@@ -379,7 +474,7 @@ io.on("connection", (socket) => {
   // Provider accepts a request
   socket.on("acceptRequest", async (data) => {
     try {
-      const { requestId, providerId, estimatedArrival, notes } = data;
+      const { requestId, providerId } = data;
       const request = await ConsultationRequest.findById(requestId);
 
       if (!request) {
@@ -416,11 +511,6 @@ io.on("connection", (socket) => {
 
       request.status = "accepted";
       request.providerId = validProviderId;
-      request.providerResponse = {
-        responseTime: new Date(),
-        estimatedArrival,
-        notes,
-      };
       request.timeline.providerAssigned = new Date();
 
       await request.save();
@@ -581,7 +671,7 @@ io.on("connection", (socket) => {
   // Update request status
   socket.on("updateRequestStatus", async (data) => {
     try {
-      const { requestId, status, notes } = data;
+      const { requestId, status, notes, providerLocation } = data;
       const request = await ConsultationRequest.findById(requestId);
 
       if (!request) {
@@ -626,6 +716,31 @@ io.on("connection", (socket) => {
         }
       }
 
+      // Update provider location when status is en_route
+      if (status === "en_route") {
+        if (!providerLocation || !providerLocation.latitude || !providerLocation.longitude) {
+          socket.emit("requestError", { 
+            error: "Provider location (latitude and longitude) is required when going en_route" 
+          });
+          return;
+        }
+        
+        // Initialize locationTracking if it doesn't exist
+        if (!request.locationTracking) {
+          request.locationTracking = {};
+        }
+        
+        // Update provider location
+        request.locationTracking.providerLocation = {
+          latitude: providerLocation.latitude,
+          longitude: providerLocation.longitude,
+          lastUpdated: new Date(),
+        };
+        
+        // Mark locationTracking as modified to ensure it's saved
+        request.markModified('locationTracking');
+      }
+
       request.status = status;
 
       // Add notes if provided
@@ -661,6 +776,72 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber walletID");
       await request.populate("providerId", "fullname cellphoneNumber role walletID");
       await request.populate("ailmentCategoryId");
+
+      // Process wallet payment when consultation is completed
+      if (status === "completed" && request.paymentMethod === "wallet") {
+        try {
+          // Get the cost (use finalCost if available, otherwise estimatedCost)
+          const cost = request.finalCost 
+            ? parseFloat(request.finalCost) 
+            : parseFloat(request.estimatedCost);
+
+          if (!isNaN(cost) && cost > 0) {
+            // Get patient and provider
+            const patient = await User.findById(request.patientId._id);
+            const provider = await User.findById(request.providerId._id);
+
+            if (patient && provider) {
+              // Update patient balance (deduct)
+              const patientPreviousBalance = patient.balance;
+              patient.PreviousBalance = patientPreviousBalance;
+              patient.balance = patient.balance - cost;
+
+              // Update provider balance (add)
+              const providerPreviousBalance = provider.balance;
+              provider.PreviousBalance = providerPreviousBalance;
+              provider.balance = provider.balance + cost;
+
+              // Save both users
+              await patient.save();
+              await provider.save();
+
+              // Create transaction for patient (withdrawal)
+              const patientTransaction = new Transaction({
+                userId: patient._id.toString(),
+                walletID: patient.walletID,
+                amount: cost,
+                time: new Date(),
+                referrence: `Consultation Request: ${request._id}`,
+                type: "withdrawal",
+                status: "completed",
+              });
+              await patientTransaction.save();
+
+              // Create transaction for provider (earning)
+              const providerTransaction = new Transaction({
+                userId: provider._id.toString(),
+                walletID: provider.walletID,
+                amount: cost,
+                time: new Date(),
+                referrence: `Consultation Request: ${request._id}`,
+                type: "earning",
+                status: "completed",
+              });
+              await providerTransaction.save();
+
+              // Update request payment status
+              request.paymentStatus = "paid";
+              await request.save();
+            }
+          }
+        } catch (paymentError) {
+          console.error("Payment processing error:", paymentError);
+          // Don't fail the request completion, but log the error
+          socket.emit("requestError", { 
+            error: "Payment processing failed. Please contact support." 
+          });
+        }
+      }
 
       // Notify patient using walletID
       const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
@@ -770,88 +951,6 @@ io.on("connection", (socket) => {
       io.emit("requestStatusChanged", { requestId, status: "cancelled" });
 
       socket.emit("requestUpdated", request);
-    } catch (error) {
-      socket.emit("requestError", { error: error.message });
-    }
-  });
-
-  // Submit patient rating
-  socket.on("submitRating", async (data) => {
-    try {
-      const { requestId, stars, feedback } = data;
-      const request = await ConsultationRequest.findById(requestId);
-
-      if (!request) {
-        socket.emit("requestError", { error: "Request not found" });
-        return;
-      }
-
-      // Validate that request is completed
-      if (request.status !== "completed") {
-        socket.emit("requestError", { error: "Can only rate completed consultations" });
-        return;
-      }
-
-      // Validate patient is the one rating
-      const patientWalletId = socket.userId;
-      let validPatientId = patientWalletId;
-      if (!mongoose.Types.ObjectId.isValid(patientWalletId)) {
-        const user = await User.findOne({ walletID: patientWalletId });
-        if (user) {
-          validPatientId = user._id;
-        } else {
-          socket.emit("requestError", { error: "Patient not found" });
-          return;
-        }
-      } else {
-        validPatientId = new mongoose.Types.ObjectId(patientWalletId);
-      }
-
-      if (request.patientId.toString() !== validPatientId.toString()) {
-        socket.emit("requestError", { error: "You can only rate your own requests" });
-        return;
-      }
-
-      // Validate rating
-      if (!stars || stars < 1 || stars > 5) {
-        socket.emit("requestError", { error: "Rating must be between 1 and 5 stars" });
-        return;
-      }
-
-      // Update rating - preserve existing providerRating if it exists
-      if (!request.rating) {
-        request.rating = {};
-      }
-      
-      request.rating.patientRating = {
-        stars,
-        feedback: feedback || "",
-        createdAt: new Date(),
-      };
-      
-      // Don't touch providerRating if it doesn't exist - Mongoose will handle it
-
-      await request.save();
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
-      await request.populate("providerId", "fullname cellphoneNumber role walletID");
-      await request.populate("ailmentCategoryId");
-
-      // Notify patient
-      const patientSocketId = userSockets.get(patientWalletId);
-      if (patientSocketId) {
-        io.to(patientSocketId).emit("requestUpdated", request);
-      }
-
-      // Notify provider
-      if (request.providerId) {
-        const providerWalletId = request.providerId.walletID || request.providerId._id.toString();
-        const providerSocketId = userSockets.get(providerWalletId);
-        if (providerSocketId) {
-          io.to(providerSocketId).emit("requestUpdated", request);
-        }
-      }
-
-      socket.emit("ratingSubmitted", { requestId, message: "Rating submitted successfully" });
     } catch (error) {
       socket.emit("requestError", { error: error.message });
     }

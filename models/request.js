@@ -40,59 +40,27 @@ const consultationRequestSchema = new mongoose.Schema(
     },
     // Patient location details
     address: {
-      street: { type: String, required: true },
-      city: { type: String, required: true },
-      region: { type: String, required: true },
+      route: { type: String, required: true }, // street
+      locality: { type: String, required: true }, // city
+      administrative_area_level_1: { type: String, required: true }, // region
       coordinates: {
-        latitude: { type: Number, required: true },
-        longitude: { type: Number, required: true },
+        latitude: { type: Number, required: true }, // geometry.location.lat - same as patientLocation.latitude
+        longitude: { type: Number, required: true }, // geometry.location.lng - same as patientLocation.longitude
       }
     },
     // Real-time location tracking
     locationTracking: {
       patientLocation: {
-        latitude: { type: Number },
-        longitude: { type: Number },
+        latitude: { type: Number }, // same as address.coordinates.latitude
+        longitude: { type: Number }, // same as address.coordinates.longitude
         lastUpdated: { type: Date },
-        accuracy: { type: Number } // in meters
       },
       providerLocation: {
         latitude: { type: Number },
         longitude: { type: Number },
         lastUpdated: { type: Date },
-        accuracy: { type: Number } // in meters
-      },
-      consultationLocation: {
-        latitude: { type: Number },
-        longitude: { type: Number },
-        address: { type: String },
-        pinnedAt: { type: Date },
-        pinnedBy: { 
-          type: String, 
-          enum: ["patient", "provider"] 
-        }
       }
     },
-    // Location change tracking
-    locationChanges: [{
-      oldLocation: {
-        latitude: { type: Number },
-        longitude: { type: Number },
-        address: { type: String }
-      },
-      newLocation: {
-        latitude: { type: Number },
-        longitude: { type: Number },
-        address: { type: String }
-      },
-      changedAt: { type: Date, default: Date.now },
-      changedBy: { 
-        type: String, 
-        enum: ["patient", "provider"] 
-      },
-      additionalCost: { type: Number, default: 0 },
-      reason: { type: String }
-    }],
     // Additional patient information
     symptoms: {
       type: String,
@@ -115,7 +83,6 @@ const consultationRequestSchema = new mongoose.Schema(
     providerResponse: {
       responseTime: { type: Date },
       estimatedArrival: { type: String }, // "15 minutes", "30 minutes", etc.
-      notes: { type: String, maxLength: 300 },
     },
     // Consultation details
     consultationDetails: {
@@ -127,19 +94,6 @@ const consultationRequestSchema = new mongoose.Schema(
       followUpInstructions: { type: String },
       followUpDate: { type: Date },
     },
-    // Rating and feedback
-    rating: {
-      patientRating: { 
-        stars: { type: Number, min: 1, max: 5 },
-        feedback: { type: String, maxLength: 500 },
-        createdAt: { type: Date }
-      },
-      providerRating: {
-        stars: { type: Number, min: 1, max: 5 },
-        feedback: { type: String, maxLength: 500 },
-        createdAt: { type: Date }
-      }
-    },
     // Payment details
     paymentStatus: {
       type: String,
@@ -148,7 +102,7 @@ const consultationRequestSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["wallet", "card", "cash"],
+      enum: ["wallet", "cash"],
       default: "wallet",
     },
     // Track providers who have rejected this request (for 'searching' mode)
@@ -219,6 +173,7 @@ consultationRequestSchema.pre("save", function(next) {
   }
   next();
 });
+
 const ConsultationRequest = mongoose.model("ConsultationRequest", consultationRequestSchema)
 
 module.exports = ConsultationRequest;
