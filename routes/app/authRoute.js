@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updatePrescribingCertificate } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
