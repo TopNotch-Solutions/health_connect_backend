@@ -7,6 +7,7 @@ const uploadannualQualification = require('../../middlewares/uploadannualQualifi
 const uploadprimaryQualification = require('../../middlewares/uploadprimaryQualification');
 const { uploadSingleBack } = require('../../middlewares/uploadIdBack');
 const { uploadMultiple } = require('../../middlewares/uploadIDDocument');
+const uploadPrescribingCertificate = require('../../middlewares/uploadPrescribingCertificate');
 const authRouter = Router();
 
 authRouter.post("/register-patient", uploadMultiple, registerPatient);
@@ -24,6 +25,7 @@ authRouter.patch("/update-id-front/:id",uploadIdFront.uploadSingleFront, updateI
 authRouter.patch("/update-id-back/:id", uploadSingleBack, updateIDBack);
 authRouter.patch("/update-annual-qualification/:id", uploadannualQualification.uploadSingleAnnual, updateAnnualQualification);
 authRouter.patch("/update-primary-qualification/:id", uploadprimaryQualification.uploadSinglePrimary, updatePrimaryQualification);
+authRouter.patch("/update-prescribing-certificate/:id", uploadPrescribingCertificate.uploadPrescribingCertificate, updatePrescribingCertificate);
 authRouter.get("/all-users", getAllAppUsers);
 authRouter.patch("/approve-documents/:id", approveHealthProviderDocuments);
 authRouter.patch("/reject-documents/:id", rejectHealthProviderDocuments);
