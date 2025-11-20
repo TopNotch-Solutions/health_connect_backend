@@ -197,7 +197,7 @@ io.on("connection", (socket) => {
         const cost = parseFloat(estimatedCost);
         if (isNaN(cost) || cost <= 0) {
           socket.emit("requestError", { 
-            error: "Invalid estimated cost. Please provide a valid amount." 
+            error: "Invalid cost. Please provide a valid amount." 
           });
           return;
         }

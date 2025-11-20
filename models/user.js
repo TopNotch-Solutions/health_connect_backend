@@ -143,6 +143,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  prescribingCertificate:{
+    type: String,
+    require: false
+  }
   
 },{
     timestamps: true,

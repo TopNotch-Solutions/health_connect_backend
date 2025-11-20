@@ -112,12 +112,12 @@ exports.registerPatient = async (req, res) => {
   try {
     
     const existingUser = await User.findOne({
-      $or: [{ cellphoneNumber: cellphoneNumber }, { email: email }],
+      $or: [{ cellphoneNumber: cellphoneNumber }, { email: email },{ nationalId}],
     });
 
     if (existingUser) {
       return res.status(409).json({
-        message: "You’re already registered with this phone number or email. Try logging in instead.",
+        message: "You’re already registered with this phone number, email or national ID. Try logging in instead.",
       });
     }
 
@@ -236,6 +236,9 @@ exports.registerHealthProvider = async (req, res) => {
       let annualQualification = files.annualQualification
       ? files.annualQualification[0].filename
       : null;
+      let prescribingCerificate = files.prescribingCerificate
+      ? files.prescribingCerificate[0].filename
+      : null;
 
     if (!fullname) {
       return res
@@ -352,12 +355,12 @@ exports.registerHealthProvider = async (req, res) => {
   try {
     
     const existingUser = await User.findOne({
-      $or: [{ cellphoneNumber: cellphoneNumber }, { email: email }],
+      $or: [{ cellphoneNumber: cellphoneNumber }, { email: email },{nationalId}],
     });
 
     if (existingUser) {
       return res.status(409).json({
-        message: "You’re already registered with this phone number or email. Try logging in instead.",
+        message: "You’re already registered with this phone number, email or national ID. Try logging in instead.",
       });
     }
 
@@ -416,6 +419,7 @@ exports.registerHealthProvider = async (req, res) => {
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
       isDocumentsSubmitted: true,
+      prescribingCerificate
     });
     await Notification.createNotification({
       userId: newUser._id,
@@ -1132,6 +1136,7 @@ if (!id) {
         message: "It seems you don’t have an account yet. Please register to get started.",
       });
     }
+    
     if (existingUser.idDocumentFront) {
       const oldImagePath = path.join("public", "images", existingUser.idDocumentFront);
 
@@ -1226,6 +1231,11 @@ if (!id) {
         message: "It seems you don’t have an account yet. Please register to get started.",
       });
     }
+    if(existingUser.role === "patient"){
+      return res.status(403).json({
+        message: "This feature isn’t available for your role. Please contact support if you think this is a mistake.",
+      });
+    }
     if (existingUser.primaryQualification) {
       const oldImagePath = path.join("public", "images", existingUser.primaryQualification);
 
@@ -1241,6 +1251,59 @@ if (!id) {
     res.status(200).json({
       status: true,
       message: "Your primary qualification has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
+exports.updatePrescribingCertificate = async (req, res) => {
+   const { id } = req.params;
+
+  let imagePath = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "Prescribing Certificate is required." });
+    }
+    
+  try{
+    const existingUser = await User.findById(id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+
+    if(existingUser.role !== "nurse"){
+      return res.status(403).json({
+        message: "This feature isn’t available for your role. Please contact support if you think this is a mistake.",
+      });
+    }
+    if (existingUser.prescribingCertificate) {
+      const oldImagePath = path.join("public", "images", existingUser.prescribingCertificate);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous profile image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingUser.prescribingCertificate = imagePath;
+    existingUser.isDocumentVerified = false;
+    await existingUser.save();
+    res.status(200).json({
+      status: true,
+      message: "Your prescribing certificate has been updated successfully",
     });
   }catch (error) {
     console.error("Error registering patient:", error);
@@ -1271,6 +1334,11 @@ if (!id) {
     if (!existingUser) {
       return res.status(404).json({
         message: "It seems you don’t have an account yet. Please register to get started.",
+      });
+    }
+    if(existingUser.role === "patient"){
+      return res.status(403).json({
+        message: "This feature isn’t available for your role. Please contact support if you think this is a mistake.",
       });
     }
     if (existingUser.annualQualification) {
