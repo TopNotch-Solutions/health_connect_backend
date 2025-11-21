@@ -346,6 +346,11 @@ exports.registerHealthProvider = async (req, res) => {
         .status(400)
         .json({ message: "Annuel qualification is required." });
     }
+    if (role.toLowerCase() === "nurse" && !prescribingCerificate) {
+      return res
+        .status(400)
+        .json({ message: "Prescribing certificate is required for nurses." });
+    }
     if (!gender) {
       return res
         .status(400)
