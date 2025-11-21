@@ -131,11 +131,10 @@ const consultationRequestSchema = new mongoose.Schema(
       cancelledAt: { type: Date },
       refundAmount: { type: Number, default: 0 },
     },
-    // Auto-expire after 30 minutes if no provider found
+    // Request expiration timestamp (for reference, but no auto-deletion)
     expiresAt: {
       type: Date,
-      default: () => new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from creation
-      index: { expireAfterSeconds: 0 }
+      default: () => new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from creation for reference only
     }
   },
   {

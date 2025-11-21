@@ -14,6 +14,9 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   },
+  transports: ['websocket', 'polling'],
+  pingInterval: 25000,
+  pingTimeout: 60000,
 });
 
 const authRouter = require("./routes/common/authRoute");
@@ -35,6 +38,7 @@ const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
+const Transaction = require("./models/transaction");
 
 
 app.use(express.static("public"));
@@ -299,6 +303,7 @@ io.on("connection", (socket) => {
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
       const { providerId } = data;
+      console.log('🔍 getAvailableRequests handler - providerId:', providerId);
 
       // If providerId provided, hide available requests when provider is busy
       if (providerId) {
@@ -314,6 +319,8 @@ io.on("connection", (socket) => {
         } else {
           validProviderId = new mongoose.Types.ObjectId(providerId);
         }
+        console.log('🔍 Converted providerId to:', validProviderId);
+        
         // Busy if any active consultation
         const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
         if (validProviderId) {
@@ -322,48 +329,31 @@ io.on("connection", (socket) => {
             status: { $in: providerActiveStatuses },
           }).select("_id");
           if (activeForProvider) {
+            console.log('⚠️ Provider is busy with request:', activeForProvider._id);
             socket.emit("availableRequests", []);
             return;
           }
         }
       }
 
-      // Build availability filter:
-      // - Always include 'searching'
-      // - Include 'pending' only when addressed to this provider (if providerId known)
-      let availabilityFilter = { status: "searching" };
-      if (providerId) {
-        let pendingForProvider = null;
-        if (mongoose.Types.ObjectId.isValid(providerId)) {
-          pendingForProvider = new mongoose.Types.ObjectId(providerId);
-        } else {
-          const user = await User.findOne({ walletID: providerId });
-          pendingForProvider = user ? user._id : null;
-        }
-        // Exclude requests this provider already rejected
-        const excludeRejected = pendingForProvider
-          ? { rejectedBy: { $ne: pendingForProvider } }
-          : {};
-
-        availabilityFilter = {
-          $and: [
-            excludeRejected,
-            {
-              $or: [{ status: "searching" }].concat(
-                pendingForProvider ? [{ status: "pending", providerId: pendingForProvider }] : []
-              ),
-            },
-          ],
-        };
-      }
-
+      // Simplified query: Just show requests with status "searching"
+      // Providers will see requests that haven't been claimed yet
+      const availabilityFilter = { status: "searching" };
+      
+      console.log('🔍 Executing query with simplified filter:', JSON.stringify(availabilityFilter, null, 2));
       const requests = await ConsultationRequest.find(availabilityFilter)
         .populate("patientId", "fullname cellphoneNumber walletID")
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
+      console.log('✅ Found requests count:', requests.length);
+      console.log('✅ Requests IDs:', requests.map(r => r._id));
+      if (requests.length > 0) {
+        console.log('✅ First request:', JSON.stringify(requests[0], null, 2));
+      }
       socket.emit("availableRequests", requests);
     } catch (error) {
+      console.error('❌ getAvailableRequests error:', error);
       socket.emit("requestError", { error: error.message });
     }
   });
@@ -451,6 +441,7 @@ io.on("connection", (socket) => {
   socket.on("getProviderRequests", async (data) => {
     try {
       const { providerId } = data;
+      console.log('🔍 getProviderRequests handler - providerId:', providerId);
       
       // Find the actual user ObjectId if providerId is not a valid ObjectId
       let validProviderId = providerId;
@@ -458,12 +449,15 @@ io.on("connection", (socket) => {
         const user = await User.findOne({ walletID: providerId });
         if (user) {
           validProviderId = user._id; // Use ObjectId directly for queries
+          console.log('🔍 Converted walletID to ObjectId:', validProviderId);
         } else {
+          console.log('⚠️ Provider not found in DB with walletID:', providerId);
           socket.emit("providerRequests", []);
           return;
         }
       } else {
         validProviderId = new mongoose.Types.ObjectId(providerId);
+        console.log('🔍 Converted string ObjectId to:', validProviderId);
       }
 
       const requests = await ConsultationRequest.find({
@@ -474,9 +468,136 @@ io.on("connection", (socket) => {
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
+      console.log('✅ Found provider requests count:', requests.length);
+      console.log('✅ Provider requests IDs:', requests.map(r => r._id));
+      if (requests.length > 0) {
+        console.log('✅ First provider request:', JSON.stringify(requests[0], null, 2));
+      }
+
       socket.emit("providerRequests", requests);
     } catch (error) {
+      console.error('❌ getProviderRequests error:', error);
       socket.emit("requestError", { error: error.message });
+    }
+  });
+
+  // Get provider's current location for a specific request
+  socket.on("getProviderLocation", async (data, callback) => {
+    try {
+      const { requestId } = data;
+      
+      if (!requestId) {
+        if (callback) callback(null);
+        return;
+      }
+
+      // Convert string ID to ObjectId
+      let objectId;
+      try {
+        objectId = new mongoose.Types.ObjectId(requestId);
+      } catch (err) {
+        console.error('❌ Invalid ObjectId format:', requestId);
+        if (callback) callback(null);
+        return;
+      }
+
+      const request = await ConsultationRequest.findById(objectId);
+      
+      if (!request) {
+        console.log('❌ Request not found for getProviderLocation:', requestId);
+        if (callback) callback(null);
+        return;
+      }
+
+      console.log('📍 Request location tracking:', request.locationTracking);
+      console.log('📍 Request status:', request.status);
+      
+      // Return provider location if available
+      if (request.locationTracking && request.locationTracking.providerLocation) {
+        console.log('✅ Sending provider location from tracking:', request.locationTracking.providerLocation);
+        if (callback) callback(request.locationTracking.providerLocation);
+      } else {
+        console.log('⚠️ No location tracking data for request - provider may not have started route yet');
+        if (callback) callback(null);
+      }
+    } catch (error) {
+      console.error('❌ getProviderLocation error:', error);
+      if (callback) callback(null);
+    }
+  });
+
+  // Update provider location in real-time for a specific request
+  socket.on("updateProviderLocationRealtime", async (data) => {
+    try {
+      console.log('🔔 Received updateProviderLocationRealtime event');
+      console.log('📊 Event data:', JSON.stringify(data));
+      
+      const { requestId, location } = data;
+      console.log('📊 requestId:', requestId, 'location:', location);
+      
+      if (!requestId || !location) {
+        console.log('⚠️ Missing requestId or location in updateProviderLocationRealtime');
+        console.log('📊 requestId truthy:', !!requestId, 'location truthy:', !!location);
+        return;
+      }
+
+      // Convert string ID to ObjectId
+      let objectId;
+      try {
+        objectId = new mongoose.Types.ObjectId(requestId);
+        console.log('✅ Converted to ObjectId:', objectId);
+      } catch (err) {
+        console.error('❌ Invalid ObjectId format:', requestId);
+        return;
+      }
+
+      const request = await ConsultationRequest.findById(objectId);
+      console.log('📊 Request found:', !!request);
+      
+      if (!request) {
+        console.log('❌ Request not found for updateProviderLocationRealtime:', requestId);
+        return;
+      }
+
+      console.log('📍 Updating location for request:', requestId);
+      
+      // Update provider location in database
+      if (!request.locationTracking) {
+        request.locationTracking = {};
+      }
+      
+      request.locationTracking.providerLocation = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        lastUpdated: new Date(),
+      };
+      
+      request.markModified('locationTracking');
+      await request.save();
+      console.log('✅ Location saved to database');
+
+      // Broadcast location update to patient
+      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientWalletId);
+      
+      console.log('📊 Patient walletId:', patientWalletId, 'socketId:', patientSocketId);
+      
+      if (patientSocketId) {
+        console.log('📍 Broadcasting provider location to patient:', { requestId, location });
+        io.to(patientSocketId).emit("updateProviderLocation", {
+          requestId,
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            timestamp: new Date(),
+          }
+        });
+      } else {
+        console.log('⚠️ Patient socket not found, location saved but not broadcasted');
+      }
+    } catch (error) {
+      console.error('❌ updateProviderLocationRealtime error:', error);
+      console.error('❌ Error stack:', error.stack);
     }
   });
 
@@ -681,9 +802,30 @@ io.on("connection", (socket) => {
   socket.on("updateRequestStatus", async (data) => {
     try {
       const { requestId, status, notes, providerLocation } = data;
-      const request = await ConsultationRequest.findById(requestId);
-
+      console.log('📤 Received updateRequestStatus:', { requestId, status, hasLocation: !!providerLocation });
+      console.log('📤 RequestId type:', typeof requestId, 'Value:', requestId);
+      
+      // Convert string ID to ObjectId
+      let objectId;
+      try {
+        objectId = new mongoose.Types.ObjectId(requestId);
+        console.log('✅ Converted to ObjectId:', objectId);
+      } catch (err) {
+        console.error('❌ Invalid ObjectId format:', requestId);
+        socket.emit("requestError", { error: "Invalid request ID format" });
+        return;
+      }
+      
+      // Debug: Check all requests in database
+      const allRequests = await ConsultationRequest.find({}).select('_id status').limit(5);
+      console.log('📊 All requests in database (first 5):', allRequests.map(r => ({ id: r._id.toString(), status: r.status })));
+      console.log('📊 Total requests in database:', await ConsultationRequest.countDocuments());
+      
+      const request = await ConsultationRequest.findById(objectId);
+      console.log('🔍 Database lookup result:', request ? '✅ Found' : '❌ Not found');
+      
       if (!request) {
+        console.error('❌ Request not found in database for ID:', requestId);
         socket.emit("requestError", { error: "Request not found" });
         return;
       }
@@ -692,8 +834,8 @@ io.on("connection", (socket) => {
       const validTransitions = {
         accepted: ["en_route", "cancelled"],
         en_route: ["arrived", "cancelled"],
-        arrived: ["in_progress", "cancelled"],
-        in_progress: ["completed"],
+        arrived: ["in_progress", "completed", "cancelled"],
+        in_progress: ["completed", "cancelled"],
       };
 
       if (validTransitions[request.status] && !validTransitions[request.status].includes(status)) {
@@ -704,7 +846,7 @@ io.on("connection", (socket) => {
       }
 
       // Validate provider can only update their own requests
-      if (["en_route", "arrived", "in_progress"].includes(status)) {
+      if (["en_route", "arrived", "in_progress", "completed"].includes(status)) {
         const providerWalletId = socket.userId;
         let validProviderId = providerWalletId;
         if (!mongoose.Types.ObjectId.isValid(providerWalletId)) {
