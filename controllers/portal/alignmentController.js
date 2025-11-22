@@ -1,7 +1,7 @@
 const AilmentCategory = require("../../models/ailment");
 
 exports.create = async (req, res) => {
-    const {title, description, cost, specialization} = req.body;
+    const {title, description, initialCost, specialization} = req.body;
     if (!title) {
       return res
         .status(400)
@@ -13,10 +13,10 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Description is required." });
     }
-    if (!cost) {
+    if (!initialCost) {
       return res
         .status(400)
-        .json({ message: "Cost is required." });
+        .json({ message: "Initial cost is required." });
     }
     if (!specialization) {
       return res
@@ -40,17 +40,24 @@ exports.create = async (req, res) => {
             .status(400)
             .json({ message: "Ailment with this title already exists." });
         }
+        
+        // Calculate commission (15% of initialCost) and cost (remaining amount)
+        const commission = initialCost * 0.15;
+        const cost = initialCost - commission;
+        
         const ailment = new AilmentCategory({
             title,
             description,
+            initialCost,
             cost,
+            commission,
             specialization: specializationArray,
         });
         await ailment.save();
         res.status(201).json({ message: "Ailment created successfully", ailment });
     }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 }
 
@@ -80,7 +87,7 @@ exports.getAilmentById = async (req, res) => {
 
 exports.updateAilment = async (req, res) => {
     const { id } = req.params;
-    const { title, description, cost, specialization } = req.body; 
+    const { title, description, initialCost, specialization } = req.body; 
     if (!title) {
       return res
         .status(400)
@@ -92,10 +99,10 @@ exports.updateAilment = async (req, res) => {
         .status(400)
         .json({ message: "Description is required." });
     }
-    if (!cost) {
+    if (!initialCost) {
       return res
         .status(400)
-        .json({ message: "Cost is required." });
+        .json({ message: "Initial cost is required." });
     }
     if (!specialization) {
       return res
@@ -119,13 +126,20 @@ exports.updateAilment = async (req, res) => {
     }
     ailment.title = title || ailment.title;
     ailment.description = description || ailment.description;
-    ailment.cost = cost || ailment.cost;
+    
+    // If initialCost is provided, recalculate commission and cost
+    if (initialCost) {
+      ailment.initialCost = initialCost;
+      ailment.commission = initialCost * 0.15;
+      ailment.cost = initialCost - ailment.commission;
+    }
+    
     ailment.specialization = specializationArray;
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });
     }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   } 
 }
 exports.deleteAilment = async (req, res) => {

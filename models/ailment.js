@@ -10,10 +10,20 @@ const ailmentCategorySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    cost: {
-      type: String,
+    initialCost: {
+      type: Number,
       required: true,
     },
+    cost: {
+      type: Number,
+      required: true,
+    },
+    commission: {
+      type: Number,
+      required: true,
+      default: 0.00,
+    },
+
     specialization: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "specialization",
