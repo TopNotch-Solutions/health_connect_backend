@@ -133,7 +133,6 @@ io.on("connection", (socket) => {
         ailmentCategoryId,
         urgency,
         address,
-        symptoms,
         estimatedCost,
         paymentMethod,
       } = data;
@@ -211,7 +210,6 @@ io.on("connection", (socket) => {
         ailmentCategoryId,
         urgency: urgency || "medium",
         address,
-        symptoms,
         preferredTime: Date.now(),
         estimatedCost,
         paymentMethod: paymentMethod || "wallet",

@@ -62,11 +62,6 @@ const consultationRequestSchema = new mongoose.Schema(
       }
     },
     // Additional patient information
-    symptoms: {
-      type: String,
-      required: false,
-      maxLength: 500,
-    },
     preferredTime: {
       type: Date,
       required: false,
