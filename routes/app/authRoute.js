@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updatePrescribingCertificate } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateAnnualQualification, updatePrimaryQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updatePrescribingCertificate, updatePushToken } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
@@ -29,5 +29,6 @@ authRouter.patch("/update-prescribing-certificate/:id", uploadPrescribingCertifi
 authRouter.get("/all-users", getAllAppUsers);
 authRouter.patch("/approve-documents/:id", approveHealthProviderDocuments);
 authRouter.patch("/reject-documents/:id", rejectHealthProviderDocuments);
+authRouter.patch("/update-push-token/:id", updatePushToken);
 
 module.exports = authRouter;

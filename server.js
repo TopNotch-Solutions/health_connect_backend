@@ -39,6 +39,7 @@ const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
+const { sendPushNotification } = require("./utils/pushNotifications");
 
 
 app.use(express.static("public"));
@@ -249,6 +250,17 @@ io.on("connection", (socket) => {
 
         if (!isBusy) {
           io.to(socketId).emit("newRequestAvailable", request);
+
+          // Send push notification
+          const providerUser = await User.findOne({ walletID: socketUserId });
+          if (providerUser && providerUser.expoPushToken && providerUser.isPushNotificationEnabled) {
+             sendPushNotification(
+                 providerUser.expoPushToken,
+                 "New Consultation Request",
+                 "A new patient is requesting a consultation nearby.",
+                 { requestId: request._id }
+             );
+          }
         }
       }
     } catch (error) {
@@ -585,8 +597,12 @@ io.on("connection", (socket) => {
   // Provider accepts a request
   socket.on("acceptRequest", async (data) => {
     try {
+      console.log('🔔 acceptRequest handler - received data:', { requestId: data.requestId, providerId: data.providerId });
       const { requestId, providerId } = data;
+      
+      console.log('🔍 Looking up request with ID:', requestId);
       const request = await ConsultationRequest.findById(requestId);
+      console.log('📊 Request found:', !!request, 'Status:', request?.status);
 
       if (!request) {
         socket.emit("requestError", { 
@@ -605,8 +621,12 @@ io.on("connection", (socket) => {
       // Find provider user - providerId is always valid
       let validProviderId = providerId;
       let provider = null;
+      console.log('🔍 Provider ID:', providerId, 'isValid ObjectId:', mongoose.Types.ObjectId.isValid(providerId));
+      
       if (!mongoose.Types.ObjectId.isValid(providerId)) {
+        console.log('🔍 Provider ID is not ObjectId, looking up by walletID...');
         provider = await User.findOne({ walletID: providerId });
+        console.log('📊 Provider found by walletID:', !!provider);
         if (!provider) {
           socket.emit("requestError", { 
             error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
@@ -617,7 +637,9 @@ io.on("connection", (socket) => {
       } else {
         // Convert string to ObjectId if it's a valid ObjectId string
         validProviderId = new mongoose.Types.ObjectId(providerId);
+        console.log('🔍 Looking up provider by ObjectId:', validProviderId);
         provider = await User.findById(validProviderId);
+        console.log('📊 Provider found by ObjectId:', !!provider);
         if (!provider) {
           socket.emit("requestError", { 
             error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
@@ -627,22 +649,34 @@ io.on("connection", (socket) => {
       }
 
       // Populate ailmentCategoryId to get commission
+      console.log('🔍 Populating ailmentCategoryId...');
       await request.populate("ailmentCategoryId");
+      console.log('📊 ailmentCategoryId:', request.ailmentCategoryId);
+      console.log('📊 paymentMethod:', request.paymentMethod);
 
       // Verify wallet balance for cash payments (deduction happens on completion)
-      if (request.paymentMethod === "cash" && request.ailmentCategoryId) {
-        const commission = parseFloat(request.ailmentCategoryId.commission);
-        const providerBalance = parseFloat(provider.balance || 0);
-
-        if (isNaN(commission) || commission <= 0) {
+      if (request.paymentMethod === "cash") {
+        console.log('💰 Payment method is cash, checking commission...');
+        
+        if (!request.ailmentCategoryId) {
+          console.error('❌ ailmentCategoryId is not populated');
           socket.emit("requestError", { 
-            error: "We're having trouble processing your request. Please try again or contact support if the issue persists." 
+            error: "We're having trouble loading the consultation details. Please try again or contact support if the issue persists." 
           });
           return;
         }
+        
+        const commission = parseFloat(request.ailmentCategoryId.commission);
+        const providerBalance = parseFloat(provider.balance || 0);
+        console.log('💰 Commission:', commission, 'Provider Balance:', providerBalance, 'Is NaN:', isNaN(commission));
 
-        if (providerBalance < commission) {
+        if (isNaN(commission) || commission < 0) {
+          console.error('❌ Invalid commission value:', request.ailmentCategoryId.commission, 'Parsed:', commission);
+          // Skip validation if commission is 0 or invalid, allow cash payment without commission check
+          console.log('💰 Skipping commission check (commission is 0 or invalid)');
+        } else if (commission > 0 && providerBalance < commission) {
           const shortfall = (commission - providerBalance).toFixed(2);
+          console.error('❌ Provider insufficient balance. Need:', commission, 'Have:', providerBalance);
           socket.emit("requestError", {
             error: `You need N$${commission.toFixed(2)} in your wallet to accept this cash payment consultation, but you currently have N$${providerBalance.toFixed(2)}. Please add N$${shortfall} to your wallet to proceed.`,
           });
@@ -652,27 +686,65 @@ io.on("connection", (socket) => {
 
       request.status = "accepted";
       request.providerId = validProviderId;
-      request.timeline.providerAssigned = new Date();
+      // Note: timeline.providerAccepted will be set automatically by pre-save hook
+      // No need to manually set providerAssigned
 
-      await request.save();
+      console.log('💾 Saving request with status: accepted, providerId:', validProviderId);
+      console.log('📝 Request before save - status:', request.status, 'providerId:', request.providerId);
+      console.log('📝 Request timeline before save:', request.timeline);
+      
+      try {
+        await request.save();
+      } catch (saveError) {
+        console.error('❌ Error during request.save():', saveError);
+        console.error('❌ Validation errors:', saveError.errors);
+        throw saveError;
+      }
+      
+      console.log('✅ Request saved successfully');
+      
       await request.populate("patientId", "fullname cellphoneNumber walletID");
       await request.populate("providerId", "fullname cellphoneNumber role walletID");
       await request.populate("ailmentCategoryId");
+      console.log('✅ Request populated successfully');
 
       // Notify patient - find patient's socket using their walletID
       const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
+      console.log('📨 Looking up patient socket with walletID:', patientWalletId);
       const patientSocketId = userSockets.get(patientWalletId);
+      console.log('📨 Patient socketId:', patientSocketId);
+      
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
+        console.log('📨 Patient notified');
+      } else {
+        console.log('⚠️  Patient not online');
+      }
+
+      // Send push notification to patient
+      const patientUser = await User.findById(request.patientId._id); // request.patientId is populated
+      if (patientUser && patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+          sendPushNotification(
+              patientUser.expoPushToken,
+              "Request Accepted",
+              `${request.providerId.fullname} has accepted your request.`,
+              { requestId: request._id }
+          );
       }
 
       // Notify provider
+      console.log('📨 Notifying provider...');
       socket.emit("requestUpdated", request);
 
       // Notify all providers to refresh available requests
+      console.log('📨 Broadcasting status change to all providers...');
       io.emit("requestStatusChanged", { requestId, status: "accepted" });
+      console.log('✅ acceptRequest completed successfully');
     } catch (error) {
-      socket.emit("requestError", { error: error.message });
+      console.error('❌ acceptRequest error:', error);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      socket.emit("requestError", { error: error.message || "Failed to accept request" });
     }
   });
 
@@ -1077,6 +1149,28 @@ io.on("connection", (socket) => {
         io.to(patientSocketId).emit("requestUpdated", request);
       }
 
+      // Send push notification to patient based on status
+      const patientUser = await User.findById(request.patientId._id);
+      if (patientUser && patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+          let title = "Update on your request";
+          let body = `Your request status is now ${status}`;
+          
+          if (status === "en_route") {
+              title = "Provider En Route";
+              body = `${request.providerId.fullname} is on the way!`;
+          } else if (status === "arrived") {
+              title = "Provider Arrived";
+              body = `${request.providerId.fullname} has arrived at your location.`;
+          } else if (status === "completed") {
+              title = "Consultation Completed";
+              body = "Your consultation has been completed. Thank you!";
+          }
+          
+          if (status !== "searching") { // Don't notify for searching status updates usually
+              sendPushNotification(patientUser.expoPushToken, title, body, { requestId: request._id });
+          }
+      }
+
       // Notify provider using walletID
       if (request.providerId) {
         const providerWalletId = request.providerId.walletID || request.providerId._id.toString();
@@ -1178,6 +1272,29 @@ io.on("connection", (socket) => {
             });
           }
         }
+      }
+
+      // Send push notification to the other party
+      if (cancelledBy === "patient" && request.providerId) {
+          const providerUser = await User.findById(request.providerId._id);
+          if (providerUser && providerUser.expoPushToken && providerUser.isPushNotificationEnabled) {
+              sendPushNotification(
+                  providerUser.expoPushToken,
+                  "Request Cancelled",
+                  "The patient has cancelled the consultation request.",
+                  { requestId: request._id }
+              );
+          }
+      } else if (cancelledBy === "provider") {
+          const patientUser = await User.findById(request.patientId._id);
+          if (patientUser && patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+              sendPushNotification(
+                  patientUser.expoPushToken,
+                  "Request Cancelled",
+                  "The provider has cancelled the consultation request.",
+                  { requestId: request._id }
+              );
+          }
       }
 
       // Notify all providers to remove cancelled request from available requests

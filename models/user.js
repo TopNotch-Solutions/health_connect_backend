@@ -114,6 +114,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  expoPushToken: {
+    type: String,
+    required: false,
+  },
   isPushNotificationEnabled: {
     type: Boolean,
     required: true,

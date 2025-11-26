@@ -44,8 +44,15 @@ const consultationRequestSchema = new mongoose.Schema(
       locality: { type: String, required: true }, // city
       administrative_area_level_1: { type: String, required: true }, // region
       coordinates: {
-        latitude: { type: Number, required: true }, // geometry.location.lat - same as patientLocation.latitude
-        longitude: { type: Number, required: true }, // geometry.location.lng - same as patientLocation.longitude
+        type: {
+          type: String,
+          enum: ['Point'],
+          default: 'Point'
+        },
+        coordinates: {
+          type: [Number], // [longitude, latitude] for GeoJSON
+          default: [0, 0]
+        }
       }
     },
     // Real-time location tracking
@@ -141,7 +148,7 @@ const consultationRequestSchema = new mongoose.Schema(
 consultationRequestSchema.index({ patientId: 1, status: 1 });
 consultationRequestSchema.index({ providerId: 1, status: 1 });
 consultationRequestSchema.index({ status: 1, createdAt: -1 });
-consultationRequestSchema.index({ "address.coordinates": "2dsphere" }); // For geospatial queries
+consultationRequestSchema.index({ "address.coordinates": "2dsphere" }); // For geospatial queries with GeoJSON
 
 // Pre-save middleware to update timeline
 consultationRequestSchema.pre("save", function(next) {
