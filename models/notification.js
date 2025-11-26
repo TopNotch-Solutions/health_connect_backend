@@ -59,7 +59,11 @@ const notificationSchema = new mongoose.Schema(
         // Patient specific
         "provider_assigned",
         "consultation_reminder",
-        "follow_up_reminder"
+        "follow_up_reminder",
+        
+        // Document related
+        "qualification_expired",
+        "qualification_expiring_soon"
       ],
       required: true,
     },

@@ -5,6 +5,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const http = require("http");
 const { Server } = require("socket.io");
+const schedule = require("node-schedule");
 require("dotenv").config();
 
 const app = express();
@@ -39,6 +40,7 @@ const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
+const Notification = require("./models/notification");
 const { sendPushNotification } = require("./utils/pushNotifications");
 
 
@@ -1339,6 +1341,153 @@ io.on("connection", (socket) => {
   });
 });
 
+schedule.scheduleJob("*/30 * * * *", async () => {
+  console.log("Running task every 30 minutes - Checking for expired qualifications...");
+
+  try {
+    const currentDate = new Date();
+    
+    // Find all health providers with specific roles
+    const healthProviders = await User.find({
+      role: { $in: ["doctor", "nurse", "physiotherapist", "social worker"] },
+      hpcnaExpiryDate: { $exists: true, $ne: null }
+    });
+
+    let expiredCount = 0;
+
+    for (const provider of healthProviders) {
+      // Check if hpcnaExpiryDate has expired
+      if (provider.hpcnaExpiryDate < currentDate && provider.isDocumentVerified) {
+        // Update isDocumentVerified to false
+        provider.isDocumentVerified = false;
+        await provider.save();
+
+        expiredCount++;
+
+        // Create notification in database
+        await Notification.createNotification({
+          userId: provider._id,
+          type: "qualification_expired",
+          title: "Qualification Expired",
+          message: "Your qualification has expired. Please renew your qualification to continue using our services.",
+          data: {
+            expiryDate: provider.hpcnaExpiryDate,
+            role: provider.role
+          },
+          priority: "high",
+          channels: {
+            inApp: true,
+            push: true,
+            email: false,
+            sms: false
+          }
+        });
+
+        // Send push notification to the user
+        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+          sendPushNotification(
+            provider.expoPushToken,
+            "Qualification Expired",
+            "Your qualification has expired. Please renew your qualification to continue using our services.",
+            { type: "qualification_expired" }
+          );
+        }
+
+        console.log(`Qualification expired for user: ${provider.fullname} (${provider.walletID})`);
+      }
+    }
+
+    console.log(`Task completed. Found ${expiredCount} expired qualifications out of ${healthProviders.length} health providers.`);
+  } catch (error) {
+    console.error("Error checking expired qualifications:", error);
+  }
+});
+
+// Scheduled job to check for qualifications expiring in 7 days (runs daily at 9:00 AM)
+schedule.scheduleJob("0 9 * * *", async () => {
+  console.log("Running daily task - Checking for qualifications expiring in 7 days...");
+
+  try {
+    const currentDate = new Date();
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(currentDate.getDate() + 7);
+    
+    // Set time to start and end of the day for accurate comparison
+    const startOfDay = new Date(sevenDaysFromNow);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(sevenDaysFromNow);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    // Find all health providers with qualifications expiring in 7 days
+    const healthProviders = await User.find({
+      role: { $in: ["doctor", "nurse", "physiotherapist", "social worker"] },
+      hpcnaExpiryDate: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      },
+      isDocumentVerified: true
+    });
+
+    let notifiedCount = 0;
+
+    for (const provider of healthProviders) {
+      // Check if notification already exists to avoid duplicate notifications
+      const existingNotification = await Notification.findOne({
+        userId: provider._id,
+        type: "qualification_expiring_soon",
+        createdAt: {
+          $gte: new Date(currentDate.getTime() - 8 * 24 * 60 * 60 * 1000) // Within last 8 days
+        }
+      });
+
+      // Only send if no recent notification exists
+      if (!existingNotification) {
+        // Create notification in database
+        await Notification.createNotification({
+          userId: provider._id,
+          type: "qualification_expiring_soon",
+          title: "Qualification Expiring Soon",
+          message: "Your qualification will expire in 7 days. Please renew your qualification to continue using our services.",
+          data: {
+            expiryDate: provider.hpcnaExpiryDate,
+            role: provider.role,
+            daysRemaining: 7
+          },
+          priority: "high",
+          channels: {
+            inApp: true,
+            push: true,
+            email: false,
+            sms: false
+          }
+        });
+
+        // Send push notification to the user
+        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+          sendPushNotification(
+            provider.expoPushToken,
+            "Qualification Expiring Soon",
+            "Your qualification will expire in 7 days. Please renew your qualification to continue using our services.",
+            { 
+              type: "qualification_expiring_soon",
+              daysRemaining: 7
+            }
+          );
+        }
+
+        notifiedCount++;
+        console.log(`Notification sent to user: ${provider.fullname} (${provider.walletID}) - Expiry: ${provider.hpcnaExpiryDate.toDateString()}`);
+      } else {
+        console.log(`Skipped user: ${provider.fullname} (${provider.walletID}) - Already notified recently`);
+      }
+    }
+
+    console.log(`Task completed. Sent ${notifiedCount} expiry warnings out of ${healthProviders.length} providers with qualifications expiring in 7 days.`);
+  } catch (error) {
+    console.error("Error checking expiring qualifications:", error);
+  }
+});
 
 mongoose
   .connect(process.env.MONGO_URI, {
