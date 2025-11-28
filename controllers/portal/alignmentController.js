@@ -1,12 +1,11 @@
 const AilmentCategory = require("../../models/ailment");
 
 exports.create = async (req, res) => {
-    const {title, description, initialCost, specialization} = req.body;
+    const {title, description, initialCost, specialization, provider, icon} = req.body;
     if (!title) {
       return res
         .status(400)
-        .
-        json({ message: "Title is required." });
+        .json({ message: "Title is required." });
     }
     if (!description) {
       return res
@@ -22,6 +21,23 @@ exports.create = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Specialization is required." });
+    }
+    if (!provider) {
+      return res
+        .status(400)
+        .json({ message: "Provider is required." });
+    }
+    if (!icon) {
+      return res
+        .status(400)
+        .json({ message: "Icon is required." });
+    }
+    // Validate provider enum
+    const validProviders = ["Doctor", "Nurse", "Physiotherapist", "Social Worker"];
+    if (!validProviders.includes(provider)) {
+      return res
+        .status(400)
+        .json({ message: "Invalid provider. Must be one of: Doctor, Nurse, Physiotherapist, Social Worker" });
     }
     // Ensure specialization is an array - convert single value to array if needed
     let specializationArray = specialization;
@@ -52,11 +68,13 @@ exports.create = async (req, res) => {
             cost,
             commission,
             specialization: specializationArray,
+            provider,
+            icon,
         });
         await ailment.save();
         res.status(201).json({ message: "Ailment created successfully", ailment });
     }catch (error) {
-    console.error("Error registering patient:", error);
+    console.error("Error creating ailment:", error);
     res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 }

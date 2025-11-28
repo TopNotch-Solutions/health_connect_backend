@@ -29,6 +29,16 @@ const ailmentCategorySchema = new mongoose.Schema(
       ref: "specialization",
       required: true,
     },
+    provider: {
+      type: String,
+      enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker"],
+      required: true,
+    },
+    icon: {
+      type: String,
+      required: true,
+      default: "alert-circle",
+    },
   },
   {
     timestamps: true,

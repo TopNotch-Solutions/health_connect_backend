@@ -181,16 +181,23 @@ io.on("connection", (socket) => {
           return;
         }
 
-        // Get ailment category to check initialCost
-        const ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
-        if (!ailmentCategory) {
-          socket.emit("requestError", { 
-            error: "We're having trouble loading the consultation details. Please try again or contact support if the issue persists." 
-          });
-          return;
+        // Get ailment category to check initialCost. Be tolerant if category id is missing
+        // or invalid (some older clients may send bad ids). Default initialCost to 0.
+        let initialCost = 0;
+        let ailmentCategory = null;
+        try {
+          if (ailmentCategoryId && mongoose.Types.ObjectId.isValid(ailmentCategoryId)) {
+            ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
+          }
+        } catch (e) {
+          console.warn('⚠️ createRequest: failed to lookup ailmentCategoryId', ailmentCategoryId, e);
         }
 
-        const initialCost = parseFloat(ailmentCategory.initialCost);
+        if (ailmentCategory && ailmentCategory.initialCost != null) {
+          initialCost = parseFloat(ailmentCategory.initialCost) || 0;
+        } else {
+          console.warn('⚠️ createRequest: ailmentCategory not found or invalid - defaulting initialCost to 0');
+        }
         if (isNaN(initialCost) || initialCost <= 0) {
           socket.emit("requestError", { 
             error: "We're having trouble processing your request. Please try again or contact support if the issue persists." 
@@ -659,22 +666,22 @@ io.on("connection", (socket) => {
       // Verify wallet balance for cash payments (deduction happens on completion)
       if (request.paymentMethod === "cash") {
         console.log('💰 Payment method is cash, checking commission...');
-        
-        if (!request.ailmentCategoryId) {
-          console.error('❌ ailmentCategoryId is not populated');
-          socket.emit("requestError", { 
-            error: "We're having trouble loading the consultation details. Please try again or contact support if the issue persists." 
-          });
-          return;
+
+        // If ailmentCategoryId isn't set (existing requests created without a proper category),
+        // default commission to 0 and allow acceptance. This prevents blocking providers from
+        // accepting older requests where the front-end didn't provide a valid ObjectId.
+        let commission = 0;
+        if (request.ailmentCategoryId && request.ailmentCategoryId.commission != null) {
+          commission = parseFloat(request.ailmentCategoryId.commission) || 0;
+        } else {
+          console.warn('⚠️ ailmentCategoryId missing or has no commission - defaulting commission to 0');
         }
-        
-        const commission = parseFloat(request.ailmentCategoryId.commission);
+
         const providerBalance = parseFloat(provider.balance || 0);
         console.log('💰 Commission:', commission, 'Provider Balance:', providerBalance, 'Is NaN:', isNaN(commission));
 
         if (isNaN(commission) || commission < 0) {
-          console.error('❌ Invalid commission value:', request.ailmentCategoryId.commission, 'Parsed:', commission);
-          // Skip validation if commission is 0 or invalid, allow cash payment without commission check
+          console.error('❌ Invalid commission value:', request.ailmentCategoryId ? request.ailmentCategoryId.commission : 'null', 'Parsed:', commission);
           console.log('💰 Skipping commission check (commission is 0 or invalid)');
         } else if (commission > 0 && providerBalance < commission) {
           const shortfall = (commission - providerBalance).toFixed(2);
@@ -708,6 +715,20 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber walletID");
       await request.populate("providerId", "fullname cellphoneNumber role walletID");
       await request.populate("ailmentCategoryId");
+
+      // Emit acceptConfirmed to the assigned provider's socket (handshake to avoid client/server race)
+      try {
+        const providerWalletId = request.providerId?.walletID || request.providerId?._id?.toString();
+        const providerSocketId = userSockets.get(providerWalletId);
+        if (providerSocketId) {
+          console.log('📣 Emitting acceptConfirmed to provider socket:', providerSocketId);
+          io.to(providerSocketId).emit('acceptConfirmed', { requestId: request._id.toString() });
+        } else {
+          console.log('⚠️ Provider socket not found for acceptConfirmed, walletId:', providerWalletId);
+        }
+      } catch (e) {
+        console.warn('⚠️ Failed to emit acceptConfirmed:', e);
+      }
       console.log('✅ Request populated successfully');
 
       // Notify patient - find patient's socket using their walletID
