@@ -600,7 +600,7 @@ exports.login = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
-        message: "We couldn�t sign you in. Please check your username and password, then try again.",
+        message: "We couldn't sign you in. Please check your username and password, then try again.",
       });
     }
     if(user.accountDeactivation) {
