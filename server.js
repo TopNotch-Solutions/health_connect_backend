@@ -907,8 +907,8 @@ io.on("connection", (socket) => {
   // Update request status
   socket.on("updateRequestStatus", async (data) => {
     try {
-      const { requestId, status, notes, providerLocation } = data;
-      console.log('📤 Received updateRequestStatus:', { requestId, status, hasLocation: !!providerLocation });
+      const { requestId, status, notes, providerLocation, providerId } = data;
+      console.log('📤 Received updateRequestStatus:', { requestId, status, hasLocation: !!providerLocation, providerId });
       console.log('📤 RequestId type:', typeof requestId, 'Value:', requestId);
       
       // Convert string ID to ObjectId
@@ -955,10 +955,15 @@ io.on("connection", (socket) => {
 
       // Validate provider can only update their own requests
       if (["en_route", "arrived", "in_progress", "completed"].includes(status)) {
-        const providerWalletId = socket.userId;
-        let validProviderId = providerWalletId;
-        if (!mongoose.Types.ObjectId.isValid(providerWalletId)) {
-          const user = await User.findOne({ walletID: providerWalletId });
+        // Use providerId from data if available, otherwise fallback to socket.userId
+        const providerIdentifier = providerId || socket.userId;
+        console.log('🔐 Provider validation - identifier:', providerIdentifier, 'request.providerId:', request.providerId?.toString());
+        
+        let validProviderId = null;
+        if (mongoose.Types.ObjectId.isValid(providerIdentifier)) {
+          validProviderId = new mongoose.Types.ObjectId(providerIdentifier);
+        } else {
+          const user = await User.findOne({ walletID: providerIdentifier });
           if (user) {
             validProviderId = user._id;
           } else {
@@ -967,11 +972,11 @@ io.on("connection", (socket) => {
             });
             return;
           }
-        } else {
-          validProviderId = new mongoose.Types.ObjectId(providerWalletId);
         }
 
+        console.log('🔐 Comparing - validProviderId:', validProviderId?.toString(), 'request.providerId:', request.providerId?.toString());
         if (!request.providerId || request.providerId.toString() !== validProviderId.toString()) {
+          console.error('❌ Provider ID mismatch - user not assigned to this request');
           socket.emit("requestError", { 
             error: "You are not assigned to this consultation request. Only the assigned provider can update this request." 
           });
