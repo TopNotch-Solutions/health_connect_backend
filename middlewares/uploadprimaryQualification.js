@@ -14,5 +14,5 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 console.log(upload, "hjkjhgfghjkl")
 module.exports = {
-    uploadSinglePrimary: upload.single("primaryQualification")
+    uploadSinglePrimary: upload.single("finalQualification")
 };

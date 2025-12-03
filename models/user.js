@@ -94,11 +94,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-  primaryQualification: {
+  finalQualification: {
     type: String,
     required: false,
   },
-  annualQualification: {
+  HPCNAQualification: {
     type: String,
     required: false,
   },
@@ -147,7 +147,7 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  prescribingCertificate:{
+  dispensingCertificateLicence:{
     type: String,
     require: false
   }

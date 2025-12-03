@@ -17,8 +17,8 @@ module.exports = {
         { name: 'profileImage', maxCount: 1 },
         { name: 'idDocumentFront', maxCount: 1 },
         { name: 'idDocumentBack', maxCount: 1 },
-        { name: 'primaryQualification', maxCount: 1 },
-        { name: 'annualQualification', maxCount: 1 },
-        {name: 'prescribingCerificate', maxCount: 1 }
+        { name: 'finalQualification', maxCount: 1 },
+        { name: 'HPCNAQualification', maxCount: 1 },
+        { name: 'dispensingCertificateLicence', maxCount: 1 }
     ])
 };

@@ -234,15 +234,15 @@ exports.registerHealthProvider = async (req, res) => {
       ? files.idDocumentBack[0].filename
       : null;
 
-      let primaryQualification = files.primaryQualification
-      ? files.primaryQualification[0].filename
+      let finalQualification = files.finalQualification
+      ? files.finalQualification[0].filename
       : null;
 
-      let annualQualification = files.annualQualification
-      ? files.annualQualification[0].filename
+      let HPCNAQualification = files.HPCNAQualification
+      ? files.HPCNAQualification[0].filename
       : null;
-      let prescribingCerificate = files.prescribingCerificate
-      ? files.prescribingCerificate[0].filename
+      let dispensingCertificateLicence = files.dispensingCertificateLicence
+      ? files.dispensingCertificateLicence[0].filename
       : null;
 
     if (!fullname) {
@@ -340,21 +340,21 @@ exports.registerHealthProvider = async (req, res) => {
         .json({ message: "ID back is required." });
     }
 
-     if (!primaryQualification) {
+     if (!finalQualification) {
       return res
         .status(400)
-        .json({ message: "Primary qualification is required." });
+        .json({ message: "Final qualification is required." });
     }
 
-     if (!annualQualification) {
+     if (!HPCNAQualification) {
       return res
         .status(400)
-        .json({ message: "Annuel qualification is required." });
+        .json({ message: "HPCNA qualification is required." });
     }
-    if (role.toLowerCase() === "nurse" && !prescribingCerificate) {
+    if (role.toLowerCase() === "nurse" && !dispensingCertificateLicence) {
       return res
         .status(400)
-        .json({ message: "Prescribing certificate is required for nurses." });
+        .json({ message: "Dispensing certificate licence is required for nurses." });
     }
     if (!gender) {
       return res
@@ -421,15 +421,15 @@ exports.registerHealthProvider = async (req, res) => {
       specializations,
       yearsOfExperience,
       operationalZone,
-      annualQualification,
-      primaryQualification,
+      HPCNAQualification,
+      finalQualification,
       profileImage: profileImagePath,
       idDocumentFront,
       idDocumentBack,
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
       isDocumentsSubmitted: true,
-      prescribingCerificate
+      dispensingCertificateLicence
     });
     await Notification.createNotification({
       userId: newUser._id,
@@ -749,8 +749,8 @@ exports.login = async (req, res) => {
         yearsOfExperience: user.yearsOfExperience,
         operationalZone: user.operationalZone,
         governingCouncil: user.governingCouncil,
-        annualQualification: user.annualQualification,
-        primaryQualification: user.primaryQualification,
+        HPCNAQualification: user.HPCNAQualification,
+        finalQualification: user.finalQualification,
         idDocumentFront: user.idDocumentFront,
         idDocumentBack: user.idDocumentBack,
       }
@@ -1221,7 +1221,7 @@ if (!id) {
   }
 }
 
-exports.updatePrimaryQualification = async (req, res) => {
+exports.updateFinalQualification = async (req, res) => {
    const { id } = req.params;
 
   let imagePath = req.file ? req.file.filename : null;
@@ -1235,7 +1235,7 @@ if (!id) {
     if (!imagePath) {
       return res
         .status(400)
-        .json({ message: "Primary qualification is required." });
+        .json({ message: "Final qualification is required." });
     }
     
   try{
@@ -1251,8 +1251,8 @@ if (!id) {
         message: "This feature isn�t available for your role. Please contact support if you think this is a mistake.",
       });
     }
-    if (existingUser.primaryQualification) {
-      const oldImagePath = path.join("public", "images", existingUser.primaryQualification);
+    if (existingUser.finalQualification) {
+      const oldImagePath = path.join("public", "images", existingUser.finalQualification);
 
       if (fs.existsSync(oldImagePath)) {
         console.log("Removing previous profile image:", oldImagePath);
@@ -1260,12 +1260,12 @@ if (!id) {
       }
     }
 
-    existingUser.primaryQualification = imagePath;
+    existingUser.finalQualification = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
-      message: "Your primary qualification has been updated successfully",
+      message: "Your final qualification has been updated successfully",
     });
   }catch (error) {
     console.error("Error registering patient:", error);
@@ -1273,7 +1273,7 @@ if (!id) {
   }
 }
 
-exports.updatePrescribingCertificate = async (req, res) => {
+exports.updateDispensingCertificateLicence = async (req, res) => {
    const { id } = req.params;
 
   let imagePath = req.file ? req.file.filename : null;
@@ -1287,7 +1287,7 @@ if (!id) {
     if (!imagePath) {
       return res
         .status(400)
-        .json({ message: "Prescribing Certificate is required." });
+        .json({ message: "Dispensing certificate licence is required." });
     }
     
   try{
@@ -1304,8 +1304,8 @@ if (!id) {
         message: "This feature isn�t available for your role. Please contact support if you think this is a mistake.",
       });
     }
-    if (existingUser.prescribingCertificate) {
-      const oldImagePath = path.join("public", "images", existingUser.prescribingCertificate);
+    if (existingUser.dispensingCertificateLicence) {
+      const oldImagePath = path.join("public", "images", existingUser.dispensingCertificateLicence);
 
       if (fs.existsSync(oldImagePath)) {
         console.log("Removing previous profile image:", oldImagePath);
@@ -1313,12 +1313,12 @@ if (!id) {
       }
     }
 
-    existingUser.prescribingCertificate = imagePath;
+    existingUser.dispensingCertificateLicence = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
-      message: "Your prescribing certificate has been updated successfully",
+      message: "Your dispensing certificate licence has been updated successfully",
     });
   }catch (error) {
     console.error("Error registering patient:", error);
@@ -1326,7 +1326,7 @@ if (!id) {
   }
 }
 
-exports.updateAnnualQualification = async (req, res) => {
+exports.updateHPCNAQualification = async (req, res) => {
    const { id } = req.params;
 
   let imagePath = req.file ? req.file.filename : null;
@@ -1340,7 +1340,7 @@ if (!id) {
     if (!imagePath) {
       return res
         .status(400)
-        .json({ message: "Annual qualification is required." });
+        .json({ message: "HPCNA qualification is required." });
     }
     
   try{
@@ -1356,8 +1356,8 @@ if (!id) {
         message: "This feature isn�t available for your role. Please contact support if you think this is a mistake.",
       });
     }
-    if (existingUser.annualQualification) {
-      const oldImagePath = path.join("public", "images", existingUser.annualQualification);
+    if (existingUser.HPCNAQualification) {
+      const oldImagePath = path.join("public", "images", existingUser.HPCNAQualification);
 
       if (fs.existsSync(oldImagePath)) {
         console.log("Removing previous profile image:", oldImagePath);
@@ -1365,12 +1365,12 @@ if (!id) {
       }
     }
 
-    existingUser.annualQualification = imagePath;
+    existingUser.HPCNAQualification = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
     res.status(200).json({
       status: true,
-      message: "Your annual qualification has been updated successfully",
+      message: "Your HPCNA qualification has been updated successfully",
     });
   }catch (error) {
     console.error("Error registering patient:", error);
