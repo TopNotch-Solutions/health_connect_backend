@@ -50,7 +50,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: [process.env.LOCAL_HOST_1, process.env.LOCAL_HOST_2],
+    origin: [process.env.LOCAL_HOST_1, process.env.LOCAL_HOST_2, process.env.LOCAL_HOST_3],
     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
     credentials: true,
   })
@@ -243,8 +243,15 @@ io.on("connection", (socket) => {
         const targetSocket = io.sockets.sockets.get(socketId);
         if (!targetSocket || !targetSocket.role || targetSocket.role === "patient") continue;
 
-        // Find provider by walletID (socketUserId) to determine busy status
-        let provider = await User.findOne({ walletID: socketUserId });
+        // Find provider by walletID (socketUserId) or _id to determine busy status
+        let provider = null;
+        if (mongoose.Types.ObjectId.isValid(socketUserId)) {
+            provider = await User.findById(socketUserId);
+        }
+        if (!provider) {
+            provider = await User.findOne({ walletID: socketUserId });
+        }
+
         let providerObjectId = provider ? provider._id : null;
 
         // If provider record not found yet (e.g., first time), treat as not busy
@@ -261,14 +268,30 @@ io.on("connection", (socket) => {
           io.to(socketId).emit("newRequestAvailable", request);
 
           // Send push notification
-          const providerUser = await User.findOne({ walletID: socketUserId });
-          if (providerUser && providerUser.expoPushToken && providerUser.isPushNotificationEnabled) {
-             sendPushNotification(
-                 providerUser.expoPushToken,
-                 "New Consultation Request",
-                 "A new patient is requesting a consultation nearby.",
-                 { requestId: request._id }
-             );
+          const providerUser = provider;
+          if (providerUser) {
+             // Create persistent notification
+             try {
+               await Notification.createNotification({
+                  userId: providerUser._id,
+                  type: "consultation_requested",
+                  title: "New Consultation Request",
+                  message: "A new patient is requesting a consultation nearby.",
+                  status: "sent",
+                  data: { requestId: request._id }
+               });
+             } catch (err) {
+               console.error("Error creating notification:", err);
+             }
+
+             if (providerUser.expoPushToken && providerUser.isPushNotificationEnabled) {
+                 sendPushNotification(
+                     providerUser.expoPushToken,
+                     "New Consultation Request",
+                     "A new patient is requesting a consultation nearby.",
+                     { requestId: request._id }
+                 );
+             }
           }
         }
       }
@@ -563,7 +586,24 @@ io.on("connection", (socket) => {
 
       console.log('📍 Updating location for request:', requestId);
       
-      // Update provider location in database
+      // Broadcast location update to patient IMMEDIATELY (Real-time)
+      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientWalletId);
+      
+      if (patientSocketId) {
+        // console.log('📍 Broadcasting provider location to patient:', { requestId, location });
+        io.to(patientSocketId).emit("updateProviderLocation", {
+          requestId,
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            timestamp: new Date(),
+          }
+        });
+      }
+
+      // Update provider location in database (Async - don't wait for it)
+      // We only save to DB to persist the last known location for page reloads
       if (!request.locationTracking) {
         request.locationTracking = {};
       }
@@ -575,28 +615,8 @@ io.on("connection", (socket) => {
       };
       
       request.markModified('locationTracking');
-      await request.save();
-      console.log('✅ Location saved to database');
-
-      // Broadcast location update to patient
-      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
-      
-      console.log('📊 Patient walletId:', patientWalletId, 'socketId:', patientSocketId);
-      
-      if (patientSocketId) {
-        console.log('📍 Broadcasting provider location to patient:', { requestId, location });
-        io.to(patientSocketId).emit("updateProviderLocation", {
-          requestId,
-          location: {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            timestamp: new Date(),
-          }
-        });
-      } else {
-        console.log('⚠️ Patient socket not found, location saved but not broadcasted');
-      }
+      request.save().catch(err => console.error('Background DB save error:', err));
+      // console.log('✅ Location saved to database (background)');
     } catch (error) {
       console.error('❌ updateProviderLocationRealtime error:', error);
       console.error('❌ Error stack:', error.stack);
@@ -718,23 +738,35 @@ io.on("connection", (socket) => {
 
       // Emit acceptConfirmed to the assigned provider's socket (handshake to avoid client/server race)
       try {
-        const providerWalletId = request.providerId?.walletID || request.providerId?._id?.toString();
-        const providerSocketId = userSockets.get(providerWalletId);
+        const providerWalletId = request.providerId?.walletID;
+        const providerId = request.providerId?._id?.toString();
+        
+        let providerSocketId = userSockets.get(providerId);
+        if (!providerSocketId && providerWalletId) {
+            providerSocketId = userSockets.get(providerWalletId);
+        }
+
         if (providerSocketId) {
           console.log('📣 Emitting acceptConfirmed to provider socket:', providerSocketId);
           io.to(providerSocketId).emit('acceptConfirmed', { requestId: request._id.toString() });
         } else {
-          console.log('⚠️ Provider socket not found for acceptConfirmed, walletId:', providerWalletId);
+          console.log('⚠️ Provider socket not found for acceptConfirmed, ID:', providerId);
         }
       } catch (e) {
         console.warn('⚠️ Failed to emit acceptConfirmed:', e);
       }
       console.log('✅ Request populated successfully');
 
-      // Notify patient - find patient's socket using their walletID
-      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
-      console.log('📨 Looking up patient socket with walletID:', patientWalletId);
-      const patientSocketId = userSockets.get(patientWalletId);
+      // Notify patient - find patient's socket using their walletID or _id
+      const patientWalletId = request.patientId.walletID;
+      const patientId = request.patientId._id.toString();
+      
+      let patientSocketId = userSockets.get(patientId);
+      if (!patientSocketId && patientWalletId) {
+          patientSocketId = userSockets.get(patientWalletId);
+      }
+
+      console.log('📨 Looking up patient socket with ID:', patientId);
       console.log('📨 Patient socketId:', patientSocketId);
       
       if (patientSocketId) {
@@ -746,13 +778,29 @@ io.on("connection", (socket) => {
 
       // Send push notification to patient
       const patientUser = await User.findById(request.patientId._id); // request.patientId is populated
-      if (patientUser && patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
-          sendPushNotification(
-              patientUser.expoPushToken,
-              "Request Accepted",
-              `${request.providerId.fullname} has accepted your request.`,
-              { requestId: request._id }
-          );
+      if (patientUser) {
+          // Create persistent notification
+          try {
+            await Notification.createNotification({
+              userId: patientUser._id,
+              type: "consultation_accepted",
+              title: "Request Accepted",
+              message: `${request.providerId.fullname} has accepted your request.`,
+              status: "sent",
+              data: { requestId: request._id }
+            });
+          } catch (err) {
+            console.error("Error creating notification:", err);
+          }
+
+          if (patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+              sendPushNotification(
+                  patientUser.expoPushToken,
+                  "Request Accepted",
+                  `${request.providerId.fullname} has accepted your request.`,
+                  { requestId: request._id }
+              );
+          }
       }
 
       // Notify provider
@@ -1170,39 +1218,71 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Notify patient using walletID
-      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
+      // Notify patient using walletID or _id
+      const patientWalletId = request.patientId.walletID;
+      const patientId = request.patientId._id.toString();
+      
+      let patientSocketId = userSockets.get(patientId);
+      if (!patientSocketId && patientWalletId) {
+          patientSocketId = userSockets.get(patientWalletId);
+      }
+
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
       }
 
       // Send push notification to patient based on status
       const patientUser = await User.findById(request.patientId._id);
-      if (patientUser && patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+      if (patientUser) {
           let title = "Update on your request";
           let body = `Your request status is now ${status}`;
+          let type = "consultation_updated";
           
           if (status === "en_route") {
               title = "Provider En Route";
               body = `${request.providerId.fullname} is on the way!`;
+              type = "consultation_en_route";
           } else if (status === "arrived") {
               title = "Provider Arrived";
               body = `${request.providerId.fullname} has arrived at your location.`;
+              type = "consultation_arrived";
           } else if (status === "completed") {
               title = "Consultation Completed";
               body = "Your consultation has been completed. Thank you!";
+              type = "consultation_completed";
           }
           
           if (status !== "searching") { // Don't notify for searching status updates usually
-              sendPushNotification(patientUser.expoPushToken, title, body, { requestId: request._id });
+              // Create persistent notification
+              try {
+                await Notification.createNotification({
+                  userId: patientUser._id,
+                  type: type,
+                  title: title,
+                  message: body,
+                  status: "sent",
+                  data: { requestId: request._id }
+                });
+              } catch (err) {
+                console.error("Error creating notification:", err);
+              }
+
+              if (patientUser.expoPushToken && patientUser.isPushNotificationEnabled) {
+                  sendPushNotification(patientUser.expoPushToken, title, body, { requestId: request._id });
+              }
           }
       }
 
-      // Notify provider using walletID
+      // Notify provider using walletID or _id
       if (request.providerId) {
-        const providerWalletId = request.providerId.walletID || request.providerId._id.toString();
-        const providerSocketId = userSockets.get(providerWalletId);
+        const providerWalletId = request.providerId.walletID;
+        const providerId = request.providerId._id.toString();
+        
+        let providerSocketId = userSockets.get(providerId);
+        if (!providerSocketId && providerWalletId) {
+            providerSocketId = userSockets.get(providerWalletId);
+        }
+
         if (providerSocketId) {
           io.to(providerSocketId).emit("requestUpdated", request);
         }
@@ -1276,17 +1356,29 @@ io.on("connection", (socket) => {
       await request.populate("providerId", "fullname cellphoneNumber role walletID");
       await request.populate("ailmentCategoryId");
 
-      // Notify patient using walletID
-      const patientWalletId = request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
+      // Notify patient using walletID or _id
+      const patientWalletId = request.patientId.walletID;
+      const patientId = request.patientId._id.toString();
+      
+      let patientSocketId = userSockets.get(patientId);
+      if (!patientSocketId && patientWalletId) {
+          patientSocketId = userSockets.get(patientWalletId);
+      }
+
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
       }
 
       // Notify provider if assigned
       if (request.providerId) {
-        const providerWalletId = request.providerId.walletID || request.providerId._id.toString();
-        const providerSocketId = userSockets.get(providerWalletId);
+        const providerWalletId = request.providerId.walletID;
+        const providerId = request.providerId._id.toString();
+        
+        let providerSocketId = userSockets.get(providerId);
+        if (!providerSocketId && providerWalletId) {
+            providerSocketId = userSockets.get(providerWalletId);
+        }
+
         if (providerSocketId) {
           io.to(providerSocketId).emit("requestUpdated", request);
           

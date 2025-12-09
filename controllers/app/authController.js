@@ -9,6 +9,7 @@ const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
 const NotificationPortal = require("../../models/notificationPortal");
+const { sendPushNotification } = require("../../utils/pushNotifications");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -22,6 +23,7 @@ exports.registerPatient = async (req, res) => {
       address,
       town,
       region,
+      pushToken
     } = req.body;
     const files = req.files;
 
@@ -166,7 +168,16 @@ exports.registerPatient = async (req, res) => {
       idDocumentBack,
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
+      expoPushToken: pushToken,
     });
+
+    if (pushToken) {
+      await sendPushNotification(
+        pushToken,
+        "Welcome to Health Connect!",
+        `Hi ${fullname}, your account has been successfully registered.`
+      );
+    }
 
     await Notification.createNotification({
       userId: newUser._id,
@@ -218,7 +229,8 @@ exports.registerHealthProvider = async (req, res) => {
       yearsOfExperience,
       operationalZone,
       governingCouncil,
-      bio
+      bio,
+      pushToken
     } = req.body;
     const files = req.files;
 
@@ -429,7 +441,8 @@ exports.registerHealthProvider = async (req, res) => {
       verifiedCellphoneNumber: cellphoneNumber,
       isAccountVerified: true,
       isDocumentsSubmitted: true,
-      dispensingCertificateLicence
+      dispensingCertificateLicence,
+      expoPushToken: pushToken,
     });
     await Notification.createNotification({
       userId: newUser._id,
@@ -438,6 +451,15 @@ exports.registerHealthProvider = async (req, res) => {
       status: "sent",
       message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
       });
+
+      if (pushToken) {
+        await sendPushNotification(
+          pushToken,
+          "Welcome to Health Connect!",
+          `Hi ${fullname}, your account has been successfully registered.`
+        );
+      }
+
       const allPortalUsers = await NotificationPortal.find();
       if(allPortalUsers && allPortalUsers.length > 0) {
         for(const portalUserNotification of allPortalUsers) {
