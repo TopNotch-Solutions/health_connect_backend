@@ -34,10 +34,9 @@ const ailmentCategorySchema = new mongoose.Schema(
       enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker"],
       required: true,
     },
-    icon: {
+    image: {
       type: String,
       required: true,
-      default: "alert-circle",
     },
   },
   {

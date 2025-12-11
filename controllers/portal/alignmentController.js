@@ -1,7 +1,12 @@
 const AilmentCategory = require("../../models/ailment");
+const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
 
 exports.create = async (req, res) => {
-    const {title, description, initialCost, specialization, provider, icon} = req.body;
+    const {title, description, initialCost, specialization, provider} = req.body;
+    const image = req.file ? req.file.filename : null;
+
     if (!title) {
       return res
         .status(400)
@@ -27,10 +32,10 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Provider is required." });
     }
-    if (!icon) {
+    if (!image) {
       return res
         .status(400)
-        .json({ message: "Icon is required." });
+        .json({ message: "Ailment image is required." });
     }
     // Validate provider enum
     const validProviders = ["Doctor", "Nurse", "Physiotherapist", "Social Worker"];
@@ -69,7 +74,7 @@ exports.create = async (req, res) => {
             commission,
             specialization: specializationArray,
             provider,
-            icon,
+            image,
         });
         await ailment.save();
         res.status(201).json({ message: "Ailment created successfully", ailment });
@@ -105,7 +110,7 @@ exports.getAilmentById = async (req, res) => {
 
 exports.updateAilment = async (req, res) => {
     const { id } = req.params;
-    const { title, description, initialCost, specialization } = req.body; 
+    const { title, description, initialCost, specialization, } = req.body; 
     if (!title) {
       return res
         .status(400)
@@ -160,6 +165,56 @@ exports.updateAilment = async (req, res) => {
     res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   } 
 }
+
+exports.updateAilmentImage = async (req, res) => {
+  let { id } = req.params;
+
+  let image = req.file ? req.file.filename : null;
+      
+if (!id) {
+      return res
+        .status(400)
+        .json({ message: "Ailment ID is required." });
+    }
+     if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid ailment ID format." });
+  }
+    if (!image) {
+      return res
+        .status(400)
+        .json({ message: "Ailment image is required." });
+    }
+    
+  try{
+    // id = new mongoose.Types.ObjectId(id)
+    const existingAilment = await AilmentCategory.findById(id);
+
+    if (!existingAilment) {
+      return res.status(404).json({
+        message: "It seems the selected ailment does not exist in the system. Please contact system admin. ",
+      });
+    }
+    if (existingAilment.image) {
+      const oldImagePath = path.join("public", "ailments", existingAilment.image);
+
+      if (fs.existsSync(oldImagePath)) {
+        console.log("Removing previous ailment image:", oldImagePath);
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    existingAilment.image = image;
+    await existingAilment.save();
+    res.status(200).json({
+      status: true,
+      message: "Ailment image has been updated successfully",
+    });
+  }catch (error) {
+    console.error("Error registering patient:", error);
+    res.status(500).json({ message: "We�re having trouble processing your request. Please try again shortly.", error });
+  }
+}
+
 exports.deleteAilment = async (req, res) => {
     const { id } = req.params;  
     try {
