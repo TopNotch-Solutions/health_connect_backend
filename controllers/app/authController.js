@@ -363,11 +363,6 @@ exports.registerHealthProvider = async (req, res) => {
         .status(400)
         .json({ message: "HPCNA qualification is required." });
     }
-    if (role.toLowerCase() === "nurse" && !dispensingCertificateLicence) {
-      return res
-        .status(400)
-        .json({ message: "Dispensing certificate licence is required for nurses." });
-    }
     if (!gender) {
       return res
         .status(400)
