@@ -27,25 +27,47 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Specialization is required." });
     }
-    if (!provider) {
-      return res
-        .status(400)
-        .json({ message: "Provider is required." });
-    }
     if (!image) {
       return res
         .status(400)
         .json({ message: "Ailment image is required." });
     }
-    // Validate provider enum
-    const validProviders = ["Doctor", "Nurse", "Physiotherapist", "Social Worker"];
-    if (!validProviders.includes(provider)) {
-      return res
-        .status(400)
-        .json({ message: "Invalid provider. Must be one of: Doctor, Nurse, Physiotherapist, Social Worker" });
-    }
-    // Ensure specialization is an array - convert single value to array if needed
+    // Normalize specialization to a proper array of ObjectId strings
     let specializationArray = specialization;
+
+    // If specialization is a JSON string (common with multipart/form-data), parse it
+    if (typeof specializationArray === "string") {
+      try {
+        const parsed = JSON.parse(specializationArray);
+        if (Array.isArray(parsed)) {
+          specializationArray = parsed;
+        } else {
+          specializationArray = [specializationArray];
+        }
+      } catch (e) {
+        // Not valid JSON, wrap as single value
+        specializationArray = [specializationArray];
+      }
+    }
+
+    // If we received an array whose first element is a JSON stringified array, flatten it
+    if (
+      Array.isArray(specializationArray) &&
+      specializationArray.length === 1 &&
+      typeof specializationArray[0] === "string" &&
+      specializationArray[0].trim().startsWith("[")
+    ) {
+      try {
+        const innerParsed = JSON.parse(specializationArray[0]);
+        if (Array.isArray(innerParsed)) {
+          specializationArray = innerParsed;
+        }
+      } catch (e) {
+        // Ignore and keep as-is
+      }
+    }
+
+    // Ensure specialization is an array - convert single value to array if needed
     if (!Array.isArray(specializationArray)) {
       specializationArray = [specializationArray];
     }
@@ -127,20 +149,47 @@ exports.updateAilment = async (req, res) => {
         .status(400)
         .json({ message: "Initial cost is required." });
     }
-    if (!specialization) {
-      return res
-        .status(400)
-        .json({ message: "Specialization is required." });
-    }
-    // Ensure specialization is an array - convert single value to array if needed
+    // Normalize specialization if provided
     let specializationArray = specialization;
-    if (!Array.isArray(specializationArray)) {
-      specializationArray = [specializationArray];
-    }
-    if (specializationArray.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one specialization is required." });
+    if (specializationArray !== undefined) {
+      if (typeof specializationArray === "string") {
+        try {
+          const parsed = JSON.parse(specializationArray);
+          if (Array.isArray(parsed)) {
+            specializationArray = parsed;
+          } else {
+            specializationArray = [specializationArray];
+          }
+        } catch (e) {
+          specializationArray = [specializationArray];
+        }
+      }
+
+      if (
+        Array.isArray(specializationArray) &&
+        specializationArray.length === 1 &&
+        typeof specializationArray[0] === "string" &&
+        specializationArray[0].trim().startsWith("[")
+      ) {
+        try {
+          const innerParsed = JSON.parse(specializationArray[0]);
+          if (Array.isArray(innerParsed)) {
+            specializationArray = innerParsed;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (!Array.isArray(specializationArray)) {
+        specializationArray = [specializationArray];
+      }
+
+      if (specializationArray.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "At least one specialization is required." });
+      }
     }
     try {
     const ailment = await AilmentCategory.findById(id);   
@@ -157,7 +206,9 @@ exports.updateAilment = async (req, res) => {
       ailment.cost = initialCost - ailment.commission;
     }
     
-    ailment.specialization = specializationArray;
+    if (specializationArray !== undefined) {
+      ailment.specialization = specializationArray;
+    }
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });
     }catch (error) {

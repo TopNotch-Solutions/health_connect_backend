@@ -32,7 +32,7 @@ const ailmentCategorySchema = new mongoose.Schema(
     provider: {
       type: String,
       enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker"],
-      required: true,
+      required: false,
     },
     image: {
       type: String,

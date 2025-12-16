@@ -31,6 +31,8 @@ const aligmentPortalRouter = require("./routes/portal/aligmentRoute");
 const faqPortalRouter = require("./routes/portal/faqRoute");
 const faqAppRouter = require("./routes/app/faqRoute");
 const notificationPortalRouter = require("./routes/portal/notificationRoute");
+const advertsRouter = require("./routes/portal/advertsRoutes");
+const appAdvertRouter = require("./routes/app/advertsRoutes")
 
 
 const authPortalRouter = require("./routes/portal/authController");
@@ -67,9 +69,11 @@ app.use("/api/portal/aligment", aligmentPortalRouter);
 app.use("/api/portal/faq", faqPortalRouter);
 app.use("/api/app/faq", faqAppRouter);
 app.use("/api/portal/notification", notificationPortalRouter);
+app.use("/api/app/adverts", appAdvertRouter)
 
 app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
+app.use("/api/portal/adverts", advertsRouter);
 
 const onlineUsers = {
   patient: new Set(),
