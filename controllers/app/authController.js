@@ -855,9 +855,11 @@ if (!id) {
       existingUser.isDocumentVerified = false;
     }
     await existingUser.save();
+    const newUser = await User.findById(id);
     res.status(200).json({
       status: true,
       message: "Your profile image has been updated successfully",
+      profileImage: newUser.profileImage,
     });
   }catch (error) {
     console.error("Error registering patient:", error);
