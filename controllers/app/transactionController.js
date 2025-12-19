@@ -245,23 +245,53 @@ exports.withdrawal = async (req, res) => {
 };
 exports.all = async (req, res) => {
   const { id } = req.params;
+  const { page = 1, limit = 10 } = req.query;
+  
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
   }
-  try {
-    const userTransactions = await Transaction.find({ userId: id });
 
-    if (userTransactions.length === 0) {
-      return res.status(200).json({
-        message: "User's transactions retrieved",
-        data: [],
+  try {
+    // Convert page and limit to numbers
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    
+    // Validate pagination parameters
+    if (pageNumber < 1 || limitNumber < 1) {
+      return res.status(400).json({ 
+        message: "Page and limit must be positive numbers" 
       });
     }
+
+    // Calculate skip value for pagination
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Get total count of transactions for this user
+    const totalTransactions = await Transaction.countDocuments({ userId: id });
+
+    // Fetch paginated transactions, sorted by time (most recent first)
+    const userTransactions = await Transaction.find({ userId: id })
+      .sort({ time: -1 })
+      .skip(skip)
+      .limit(limitNumber);
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalTransactions / limitNumber);
+
     return res.status(200).json({
       message: "User's transactions retrieved",
       data: userTransactions,
+      pagination: {
+        currentPage: pageNumber,
+        totalPages: totalPages,
+        totalTransactions: totalTransactions,
+        limit: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPreviousPage: pageNumber > 1
+      }
     });
   } catch (error) {
+    console.error("Error fetching transaction history:", error);
     res.status(500).json({ message: "Internal server error", error });
   }
 };
