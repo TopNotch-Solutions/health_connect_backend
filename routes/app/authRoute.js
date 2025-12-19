@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken, userDetails } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
@@ -15,6 +15,7 @@ authRouter.post("/register-health-provider", uploadMultipleDocuments, registerHe
 authRouter.post("/forgot-password-verify-otp", verifyOtpReset);
 authRouter.post("/forgot-password-reset/:id", resetPassword);
 authRouter.post("/login", login);
+authRouter.get("/user-details/:id", userDetails);
 authRouter.delete("/remove-profile-image/:id", removeProfileImage);
 authRouter.put("/update-patient-details/:id", updatePatientDetails);
 authRouter.patch("/change-password/:id", changePassword);

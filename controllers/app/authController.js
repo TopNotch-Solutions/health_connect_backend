@@ -777,7 +777,75 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: "We�re having trouble processing your request. Please try again shortly.", error });
   }
 }
-
+exports.userDetails = async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+      return res
+        .status(400)
+        .json({ message: "User ID is required." });
+    }
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+    return res.status(200).json({
+      status: true,
+      user:user.role === "patient" ? {
+        fullname: user.fullname,
+        email: user.email,
+        role: user.role,
+        cellphoneNumber: user.cellphoneNumber,
+        walletID: user.walletID,
+        userId: user._id,
+        gender: user.gender,
+        isPushNotificationEnabled: user.isPushNotificationEnabled,
+        nationalId: user.nationalId,
+        dateOfBirth: user.dateOfBirth,
+        balance: user.balance,
+        profileImage: user.profileImage,
+        address: user.address,
+        region: user.region,
+        town: user.town,
+        isAccountVerified: user.isAccountVerified,
+      }: {
+        fullname: user.fullname,
+        email: user.email,
+        role: user.role,
+        cellphoneNumber: user.cellphoneNumber,
+        walletID: user.walletID,
+        userId: user._id,
+        gender: user.gender,
+        isPushNotificationEnabled: user.isPushNotificationEnabled,
+        nationalId: user.nationalId,
+        dateOfBirth: user.dateOfBirth,
+        profileImage: user.profileImage,
+        address: user.address,
+        region: user.region,
+        town: user.town,
+        isAccountVerified: user.isAccountVerified,
+        isDocumentsSubmitted: user.isDocumentsSubmitted,
+        isDocumentVerified: user.isDocumentVerified,
+        bio: user.bio,
+        hpcnaNumber: user.hpcnaNumber,
+        hpcnaExpiryDate: user.hpcnaExpiryDate,
+        specializations: user.specializations,
+        yearsOfExperience: user.yearsOfExperience,
+        operationalZone: user.operationalZone,
+        governingCouncil: user.governingCouncil,
+        HPCNAQualification: user.HPCNAQualification,
+        finalQualification: user.finalQualification,
+        idDocumentFront: user.idDocumentFront,
+        idDocumentBack: user.idDocumentBack,
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching userDetails:", error);
+    res.status(500).json({ message:"We're having trouble processing your request. Please try again shortly.", error });
+  }
+}
 exports.removeProfileImage = async (req, res) => {
   const { id } = req.params;
 
