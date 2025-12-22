@@ -82,30 +82,20 @@ exports.markNotificationsAsRead = async (req, res) => {
 
 exports.deleteNotifications = async (req, res) => {
   const { id } = req.params;
-  const { notificationIds } = req.body;
 
   if (!id) {
-    return res.status(400).json({ message: "User ID is required." });
-  }
-
-  if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
-    return res.status(400).json({ message: "Notification IDs are required." });
+    return res.status(400).json({ message: "Notification ID is required." });
   }
 
   try {
-    const existingUser = await User.findById(id);
-    if (!existingUser) {
-      return res.status(404).json({ message: "It seems you don’t have an account yet. Please register to get started." });
+
+    const deletedNotification = await Notification.findByIdAndDelete(id);
+
+    if (!deletedNotification) {
+      return res.status(404).json({ message: "Notification not found." });
     }
 
-    const notifications = await Notification.find({ _id: { $in: notificationIds }, userId: id });
-    if (!notifications || notifications.length === 0) {
-      return res.status(404).json({ message: "No matching notifications found." });
-    }
-
-    await Notification.deleteMany({ _id: { $in: notificationIds }, userId: id });
-
-    res.status(200).json({ status: true, message: "Notifications deleted successfully." });
+    res.status(200).json({ status: true, message: "Notification deleted successfully." });
   } catch (error) {
     console.error("Error deleting notifications:", error);
     res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
