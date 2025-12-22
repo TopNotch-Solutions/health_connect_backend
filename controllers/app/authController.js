@@ -187,6 +187,23 @@ exports.registerPatient = async (req, res) => {
       message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
     });
 
+    await Notification.createNotification({
+  userId: newUser._id,
+  type: "welcome",
+  title: "Application Under Review",
+  status: "sent",
+  message: `Dear ${newUser.fullname},
+
+Thank you for completing your registration. We would like to inform you that your application is currently under review.
+
+Once your application has been successfully verified, you will be granted full access to our platform, including the ability to request consultations. We will notify you as soon as the verification process is complete.
+
+Thank you for your patience and understanding.
+
+Kind regards,
+The Health Platform Team`
+});
+
     const allPortalUsers = await NotificationPortal.find();
     if (allPortalUsers && allPortalUsers.length > 0) {
       for (const portalUserNotification of allPortalUsers) {
@@ -446,7 +463,22 @@ exports.registerHealthProvider = async (req, res) => {
       status: "sent",
       message: `Hi ${newUser.fullname}, welcome aboard! We're excited to have you as a part of our health community. Start exploring our services today!`,
       });
+      await Notification.createNotification({
+  userId: newUser._id,
+  type: "welcome",
+  title: "Application Under Review",
+  status: "sent",
+  message: `Dear ${newUser.fullname},
 
+Thank you for completing your registration. We would like to inform you that your application is currently under review.
+
+Once your application has been successfully verified, you will be granted full access to our platform, including the ability to accept consultations. We will notify you as soon as the verification process is complete.
+
+Thank you for your patience and understanding.
+
+Kind regards,
+The Health Platform Team`
+});
       if (pushToken) {
         await sendPushNotification(
           pushToken,

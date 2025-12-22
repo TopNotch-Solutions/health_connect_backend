@@ -157,6 +157,22 @@ io.on("connection", (socket) => {
       // Convert patientId to ObjectId (patientId is always a valid ObjectId)
       const validPatientId = new mongoose.Types.ObjectId(patientId);
 
+      // Verify patient's document is verified before allowing consultation request
+      const patient = await User.findById(validPatientId);
+      if (!patient) {
+        socket.emit("requestError", { 
+          error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
+        });
+        return;
+      }
+
+      if (!patient.isDocumentVerified) {
+        socket.emit("requestError", {
+          error: "Your account is pending verification. Please wait for our admin team to verify your information before requesting a consultation. We'll notify you once your account has been verified. If verification is taking too long, you can log a ticket in the issues section.",
+        });
+        return;
+      }
+
       // Enforce single active request per patient
       const existingActive = await ConsultationRequest.findOne({
         patientId: validPatientId,
@@ -177,13 +193,7 @@ io.on("connection", (socket) => {
 
       // Check wallet balance if payment method is wallet
       if (paymentMethod === "wallet") {
-        const patient = await User.findById(validPatientId);
-        if (!patient) {
-          socket.emit("requestError", { 
-            error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
-          });
-          return;
-        }
+        // Patient already fetched above, no need to fetch again
 
         // Get ailment category to check initialCost. Be tolerant if category id is missing
         // or invalid (some older clients may send bad ids). Default initialCost to 0.
@@ -679,6 +689,14 @@ io.on("connection", (socket) => {
           });
           return;
         }
+      }
+
+      // Verify provider's document is verified before allowing consultation acceptance
+      if (!provider.isDocumentVerified) {
+        socket.emit("requestError", {
+          error: "Your account is pending verification. Please wait for our admin team to verify your information before accepting consultations. We'll notify you once your account has been verified. If verification is taking too long, you can log a ticket in the issues section.",
+        });
+        return;
       }
 
       // Populate ailmentCategoryId to get commission
