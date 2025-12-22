@@ -241,7 +241,7 @@ io.on("connection", (socket) => {
       });
 
       await request.save();
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber walletID profileImage");
       await request.populate("ailmentCategoryId");
 
       // Notify patient using their walletID
@@ -755,7 +755,7 @@ io.on("connection", (socket) => {
       console.log('✅ Request saved successfully');
       
       await request.populate("patientId", "fullname cellphoneNumber walletID");
-      await request.populate("providerId", "fullname cellphoneNumber role walletID");
+      await request.populate("providerId", "fullname cellphoneNumber role walletID profileImage");
       await request.populate("ailmentCategoryId");
 
       // Emit acceptConfirmed to the assigned provider's socket (handshake to avoid client/server race)
