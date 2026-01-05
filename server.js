@@ -398,7 +398,7 @@ io.on("connection", (socket) => {
   // Get ailment categories via socket
   socket.on("getAilmentCategories", async () => {
     try {
-      const categories = await AilmentCategory.find().sort({ title: 1 });
+      const categories = await AilmentCategory.find().populate('specialization');
       socket.emit("ailmentCategories", categories);
     } catch (error) {
       socket.emit("requestError", { error: error.message });
