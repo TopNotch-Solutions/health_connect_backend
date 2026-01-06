@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken, userDetails } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken, userDetails, getAppToken } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
@@ -8,13 +8,14 @@ const uploadprimaryQualification = require('../../middlewares/uploadprimaryQuali
 const { uploadSingleBack } = require('../../middlewares/uploadIdBack');
 const { uploadMultiple } = require('../../middlewares/uploadIDDocument');
 const uploadPrescribingCertificate = require('../../middlewares/uploadPrescribingCertificate');
+const { appTokenMiddleware, checkAppUser } = require('../../middlewares/authMiddleware');
 const authRouter = Router();
 
 authRouter.post("/register-patient", uploadMultiple, registerPatient);
 authRouter.post("/register-health-provider", uploadMultipleDocuments, registerHealthProvider);
 authRouter.post("/forgot-password-verify-otp", verifyOtpReset);
 authRouter.post("/forgot-password-reset/:id", resetPassword);
-authRouter.post("/login", login);
+authRouter.post("/login", appTokenMiddleware, checkAppUser, login);
 authRouter.get("/user-details/:id", userDetails);
 authRouter.delete("/remove-profile-image/:id", removeProfileImage);
 authRouter.put("/update-patient-details/:id", updatePatientDetails);
@@ -31,5 +32,6 @@ authRouter.get("/all-users", getAllAppUsers);
 authRouter.patch("/approve-documents/:id", approveHealthProviderDocuments);
 authRouter.patch("/reject-documents/:id", rejectHealthProviderDocuments);
 authRouter.patch("/update-push-token/:id", updatePushToken);
+authRouter.get("/retrieve-jwt-token", getAppToken);
 
 module.exports = authRouter;

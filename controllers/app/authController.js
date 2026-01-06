@@ -10,6 +10,7 @@ const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
 const NotificationPortal = require("../../models/notificationPortal");
 const { sendPushNotification } = require("../../utils/pushNotifications");
+const { appUserToken } = require("../../utils/generateJWTToken");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -1695,6 +1696,27 @@ exports.updatePushToken = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Push token updated successfully.",
+    });
+  } catch (error) {
+    console.error("Error updating push token:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+
+exports.getAppToken = async (req, res) => {
+
+  try {
+    const getJwtToken = await appUserToken();
+    if (!getJwtToken) {
+      return res.status(404).json({
+        message: "We're having trouble processing your request. Please try again shortly.",
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "App user token retrieved successfully.",
+      token: getJwtToken
     });
   } catch (error) {
     console.error("Error updating push token:", error);
