@@ -1,11 +1,12 @@
 const { Router } = require('express');
 const { createIssue, all, getAllIssues } = require('../../controllers/app/issueController');
 const uploadIssueImage = require('../../middlewares/uploadIssueImage');
+const { tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddleware');
 
 const issueRouter = Router();
 
-issueRouter.post('/create-issue/:id', uploadIssueImage.uploadIssueImage, createIssue);
-issueRouter.get('/all-issues/:id', all);
-issueRouter.get('/all-issues', getAllIssues);
+issueRouter.post('/create-issue/:id',tokenAuthMiddleware,checkUser, uploadIssueImage.uploadIssueImage, createIssue);
+issueRouter.get('/all-issues/:id',tokenAuthMiddleware,checkUser, all);
+issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, getAllIssues);
 
 module.exports = issueRouter;

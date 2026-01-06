@@ -5,6 +5,9 @@ const loginToken = (id, role) => {
   return jwt.sign(
     { id, role },
     process.env.MOBILE_TOKEN,
+     {
+      expiresIn: '1d',
+    }
   );
 };
 
