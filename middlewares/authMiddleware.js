@@ -83,7 +83,7 @@ module.exports.checkUser = (req, res, next) => {
   try {
     const secretKey = process.env.MOBILE_TOKEN;
     const decoded = jwt.verify(token, secretKey); 
-    if (decoded.role !== 'User') {
+    if (decoded.role !== 'patient' && decoded.role !== 'doctor' && decoded.role !== 'nurse' && decoded.role !== 'physiotherapist' && decoded.role !== 'social worker') {
       return res.status(403).json({
         status: "FAILURE",
         message: "Access denied. User does not have access to this route.",
