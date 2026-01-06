@@ -10,7 +10,7 @@ const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
 const NotificationPortal = require("../../models/notificationPortal");
 const { sendPushNotification } = require("../../utils/pushNotifications");
-const { appUserToken } = require("../../utils/generateJWTToken");
+const { appUserToken, loginToken } = require("../../utils/generateJWTToken");
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -754,6 +754,13 @@ exports.login = async (req, res) => {
       );
       loginAttempt = await LoginAttempt.create({ userId: user._id, attempts: 0 });
     }
+
+    const getJwtToken = await loginToken(user._id, user.role)
+    if (!getJwtToken) {
+      return res.status(404).json({
+        message: "We're having trouble processing your request. Please try again shortly.",
+      });
+    }
      return res.status(200).json({
       status: true,
       message: "You have logged in successfully.",
@@ -774,6 +781,7 @@ exports.login = async (req, res) => {
         region: user.region,
         town: user.town,
         isAccountVerified: user.isAccountVerified,
+        token: getJwtToken
       }: {
         fullname: user.fullname,
         email: user.email,
@@ -803,11 +811,12 @@ exports.login = async (req, res) => {
         finalQualification: user.finalQualification,
         idDocumentFront: user.idDocumentFront,
         idDocumentBack: user.idDocumentBack,
+        token: getJwtToken
       }
     });
   }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We�re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 }
 exports.userDetails = async (req, res) => {
