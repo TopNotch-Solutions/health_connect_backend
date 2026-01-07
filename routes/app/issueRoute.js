@@ -5,8 +5,8 @@ const { tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddle
 
 const issueRouter = Router();
 
-issueRouter.post('/create-issue/:id',tokenAuthMiddleware,checkUser, uploadIssueImage.uploadIssueImage, createIssue);
-issueRouter.get('/all-issues/:id',tokenAuthMiddleware,checkUser, all);
+issueRouter.post('/create-issue',tokenAuthMiddleware,checkUser, uploadIssueImage.uploadIssueImage, createIssue);
+issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, all);
 issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, getAllIssues);
 
 module.exports = issueRouter;

@@ -3,7 +3,7 @@ const User = require("../../models/user");
 const generateTransactionReference = require("../../utils/referrenceGenerator");
 
 exports.fundOwnWallet = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { amount, cardNumber, expiryDate, cvv, cardHolder } = req.body;
 
   if (!id) {
@@ -60,7 +60,7 @@ exports.fundOwnWallet = async (req, res) => {
 };
 
 exports.fundSomeonesWallet = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { amount, cardNumber, expiryDate, cvv, walletID, cardHolder } = req.body;
 
   if (!id) {
@@ -128,7 +128,7 @@ exports.fundSomeonesWallet = async (req, res) => {
 };
 
 exports.wallet2Wallet = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { amount, walletID } = req.body;
 
   if (!id) {
@@ -192,7 +192,7 @@ exports.wallet2Wallet = async (req, res) => {
   }
 };
 exports.withdrawal = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { amount } = req.body;
 
   if (!id) {
@@ -244,7 +244,7 @@ exports.withdrawal = async (req, res) => {
   }
 };
 exports.all = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { page = 1, limit = 10 } = req.query;
   
   if (!id) {

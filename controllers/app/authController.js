@@ -820,7 +820,8 @@ exports.login = async (req, res) => {
   }
 }
 exports.userDetails = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
+
   if (!id) {
       return res
         .status(400)
@@ -889,7 +890,7 @@ exports.userDetails = async (req, res) => {
   }
 }
 exports.removeProfileImage = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
 
 if (!id) {
       return res
@@ -927,7 +928,7 @@ if (!id) {
 }
 
 exports.updateProfileImage = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
 
   let profileImagePath = req.file ? req.file.filename : null;
       
@@ -978,7 +979,7 @@ if (!id) {
 }
 
 exports.updatePatientDetails = async (req, res) => {
-  let userId  = req.params.id;
+  const id = req.user.id;
   const {
       fullname,
       cellphoneNumber,
@@ -1076,7 +1077,7 @@ exports.updatePatientDetails = async (req, res) => {
 }
 
 exports.updateHealthProvider = async (req, res) => {
-   let userId  = req.params.id;
+   const userId = req.user.id;
   let {
       fullname,
       cellphoneNumber,
@@ -1183,7 +1184,7 @@ exports.updateHealthProvider = async (req, res) => {
 }
 
 exports.changePassword = async (req, res) => {
-  let userId  = req.params.id;
+  let userId  = req.user.id;
   const { currentPassword, newPassword, confirmPassword } = req.body;
 
   if (!userId) {
@@ -1256,7 +1257,7 @@ exports.changePassword = async (req, res) => {
 }
 
 exports.updateIDFront = async (req, res) => {
-   const { id } = req.params;
+   const id = req.user.id;
 
   let imagePath = req.file ? req.file.filename : null;
       
@@ -1304,7 +1305,7 @@ if (!id) {
 }
 
 exports.updateIDBack = async (req, res) => {
-   const { id } = req.params;
+   const id = req.user.id;
 
   let imagePath = req.file ? req.file.filename : null;
       
@@ -1351,7 +1352,7 @@ if (!id) {
 }
 
 exports.updateFinalQualification = async (req, res) => {
-   const { id } = req.params;
+   const id = req.user.id;
 
   let imagePath = req.file ? req.file.filename : null;
       
@@ -1403,7 +1404,7 @@ if (!id) {
 }
 
 exports.updateDispensingCertificateLicence = async (req, res) => {
-   const { id } = req.params;
+   const id = req.user.id;
 
   let imagePath = req.file ? req.file.filename : null;
       
@@ -1456,7 +1457,7 @@ if (!id) {
 }
 
 exports.updateHPCNAQualification = async (req, res) => {
-   const { id } = req.params;
+   const id = req.user.id;
 
   let imagePath = req.file ? req.file.filename : null;
       
@@ -1518,7 +1519,7 @@ exports.getAllAppUsers = async (req, res) => {
 };
 
 exports.deactivateAccount = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   if (!id) {
       return res
         .status(400)
@@ -1680,7 +1681,7 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
 };
 
 exports.updatePushToken = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
   const { pushToken } = req.body;
 
   if (!id) {

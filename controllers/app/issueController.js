@@ -3,7 +3,7 @@ const Notification = require("../../models/notification");
 
 exports.createIssue = async (req, res) => {
   const { title, description } = req.body;
-  const { id } = req.params;
+  const id = req.user.id;
 
   let issueImage = req.file ? req.file.filename : null;
 
@@ -65,7 +65,7 @@ exports.createIssue = async (req, res) => {
 };
 
 exports.all = async (req, res) => {
-  const { id } = req.params;
+  const id = req.user.id;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
