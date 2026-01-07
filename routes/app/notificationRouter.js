@@ -3,9 +3,9 @@ const { getAllNotification, getUnReadCount, markNotificationsAsRead, deleteNotif
 const { tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddleware');
 const notificationRouter = Router();
 
-notificationRouter.get("/all-user-notification/:id",tokenAuthMiddleware,checkUser, getAllNotification);
-notificationRouter.get("/unread-count/:id",tokenAuthMiddleware,checkUser, getUnReadCount);
-notificationRouter.patch("/mark-as-read/:id",tokenAuthMiddleware,checkUser, markNotificationsAsRead);
+notificationRouter.get("/all-user-notification",tokenAuthMiddleware,checkUser, getAllNotification);
+notificationRouter.get("/unread-count",tokenAuthMiddleware,checkUser, getUnReadCount);
+notificationRouter.patch("/mark-as-read",tokenAuthMiddleware,checkUser, markNotificationsAsRead);
 notificationRouter.delete("/delete-notification/:id",tokenAuthMiddleware,checkUser, deleteNotifications);
 
 module.exports = notificationRouter;

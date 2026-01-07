@@ -2,7 +2,7 @@ const Notification = require("../../models/notification");
 const User = require("../../models/user");
 
 exports.getAllNotification = async (req, res) => {
-    const { id } = req.params;
+    const id  = req.user.id;
     if (!id) {
       return res
         .status(400)
@@ -23,7 +23,7 @@ exports.getAllNotification = async (req, res) => {
   }
 };
 exports.getUnReadCount = async (req, res) => {
-    const { id } = req.params;
+    const id  = req.user.id;
     if (!id) {
       return res
         .status(400)
@@ -44,7 +44,7 @@ exports.getUnReadCount = async (req, res) => {
   }
 };
 exports.markNotificationsAsRead = async (req, res) => {
-  const { id } = req.params;
+  const id  = req.user.id;
 
   if (!id) {
     return res.status(400).json({ message: "User ID is required." });
