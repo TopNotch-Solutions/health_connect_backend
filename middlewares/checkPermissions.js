@@ -23,7 +23,7 @@ const checkPermission = (requiredPermission) => {
       if (!user) {
         return res.status(404).json({
           status: false,
-          message: "User not found.",
+          message: "We couldn’t find an account with the provided details.",
         });
       }
 

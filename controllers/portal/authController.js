@@ -359,7 +359,7 @@ exports.updatePortalUser = async (req, res) => {
   try {
     const existingUser = await PortalUser.findById(id);
     if (!existingUser) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
 
     // Check if email is being changed and if it's already taken by another user
@@ -437,7 +437,7 @@ exports.updatePortalUserPassword = async (req, res) => {
   try {
     const existingUser = await PortalUser.findById(id);
     if (!existingUser) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
 
     const isMatch = await bcrypt.compare(currentPassword, existingUser.password);
@@ -490,7 +490,7 @@ exports.updatePortalUserProfileImage = async (req, res) => {
   try {
     const existingUser = await PortalUser.findById(id);
     if (!existingUser) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
 
     // Delete old profile image if it exists
@@ -534,7 +534,7 @@ exports.deletePortalUser = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({ 
         status: false,
-        message: "User not found." 
+        message: "We couldn’t find an account with the provided details." 
       });
     }
 

@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken, userDetails, getAppToken } = require('../../controllers/app/authController');
+const { registerPatient, registerHealthProvider, verifyOtpReset, resetPassword, login, removeProfileImage, updateProfileImage, updateIDFront, updateIDBack, updateHPCNAQualification, updateFinalQualification, updatePatientDetails, updateHealthProvider, changePassword, deactivateAccount, getAllAppUsers, approveHealthProviderDocuments, rejectHealthProviderDocuments, updateDispensingCertificateLicence, updatePushToken, userDetails, getAppToken, logout } = require('../../controllers/app/authController');
 const { uploadSingle } = require('../../middlewares/uploadProfileImage');
 const { uploadMultipleDocuments } = require('../../middlewares/uploadHealthProviderImages');
 const uploadIdFront = require('../../middlewares/uploadIdFront');
@@ -32,6 +32,7 @@ authRouter.get("/all-users",tokenAuthMiddleware,checkUser, getAllAppUsers);
 authRouter.patch("/approve-documents/:id",tokenAuthMiddleware,checkUser, approveHealthProviderDocuments);
 authRouter.patch("/reject-documents/:id", tokenAuthMiddleware,checkUser, rejectHealthProviderDocuments);
 authRouter.patch("/update-push-token", tokenAuthMiddleware,checkUser, updatePushToken);
+authRouter.patch("/logout", tokenAuthMiddleware,checkUser, logout);
 authRouter.get("/retrieve-jwt-token", getAppToken);
 
 module.exports = authRouter;

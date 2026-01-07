@@ -103,7 +103,7 @@ exports.createPortalNotification = async (req, res) => {
   try {
     const existingUser = await PortalUser.findById(userId);
     if (!existingUser) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
     const notification = new NotificationPortal({
       userId,
@@ -182,7 +182,7 @@ exports.sendNotificationToUser = async (req, res) => {
     // Verify user exists
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ message: "App user not found." });
+      return res.status(404).json({ message: "App We couldn’t find an account with the provided details." });
     }
 
     // Create notification

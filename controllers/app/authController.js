@@ -839,7 +839,7 @@ exports.userDetails = async (req, res) => {
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
-        message: "User not found.",
+        message: "We couldn’t find an account with the provided details.",
       });
     }
     return res.status(200).json({
@@ -1561,7 +1561,7 @@ exports.approveHealthProviderDocuments = async (req, res) => {
     const existingUser = await User.findById(id);
     if (!existingUser) {
       return res.status(404).json({
-        message: "User not found.",
+        message: "We couldn’t find an account with the provided details.",
       });
     }
 
@@ -1646,7 +1646,7 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
     const existingUser = await User.findById(id);
     if (!existingUser) {
       return res.status(404).json({
-        message: "User not found.",
+        message: "We couldn’t find an account with the provided details.",
       });
     }
 
@@ -1717,7 +1717,7 @@ exports.updatePushToken = async (req, res) => {
     const existingUser = await User.findById(id);
     if (!existingUser) {
       return res.status(404).json({
-        message: "User not found.",
+        message: "We couldn’t find an account with the provided details.",
       });
     }
 
@@ -1728,6 +1728,34 @@ exports.updatePushToken = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Push token updated successfully.",
+    });
+  } catch (error) {
+    console.error("Error updating push token:", error);
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+  }
+};
+exports.logout = async (req, res) => {
+  const id = req.user.id;
+
+  if (!id) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+  
+
+  try {
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "We couldn’t find an account with the provided details.",
+      });
+    }
+
+    existingUser.expoPushToken = null;
+    await existingUser.save();
+
+    res.status(200).json({
+      status: true,
+      message: "You have been securely logged out of your account.",
     });
   } catch (error) {
     console.error("Error updating push token:", error);

@@ -144,7 +144,7 @@ exports.wallet2Wallet = async (req, res) => {
   try {
     const user = await User.findOne({ _id: id });
     if (!user) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
     
     const userFunded = await User.findOne({ walletID });
@@ -205,7 +205,7 @@ exports.withdrawal = async (req, res) => {
   try {
     const user = await User.findOne({ _id: id });
     if (!user) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
 
     if (user.balance <= 0) {
