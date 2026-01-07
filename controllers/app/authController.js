@@ -628,7 +628,7 @@ exports.resetPassword = async (req, res) => {
 }
 
 exports.login = async (req, res) => {
-  const {email, password} = req.body;
+  const {email, password, pushToken} = req.body;
 
   if (!email) {
       return res
@@ -639,6 +639,11 @@ exports.login = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Password is required." });
+    }
+    if (!pushToken) {
+      return res
+        .status(400)
+        .json({ message: "Device fcm token is required." });
     }
   try{
      const user = await User.findOne({
@@ -761,6 +766,9 @@ exports.login = async (req, res) => {
         message: "We're having trouble processing your request. Please try again shortly.",
       });
     }
+
+    user.expoPushToken = pushToken;
+    await user.save();
      return res.status(200).json({
       status: true,
       message: "You have logged in successfully.",
@@ -1602,6 +1610,14 @@ exports.approveHealthProviderDocuments = async (req, res) => {
       priority: "high",
     });
 
+    if(existingUser.expoPushToken){
+      await sendPushNotification(
+  existingUser.expoPushToken,
+  "Application Update: Document Verification Complete",
+  message,
+);
+    }
+
     res.status(200).json({
       status: true,
       message: isHealthProvider 
@@ -1666,7 +1682,13 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
         rejectionReason: reason,
       },
     });
-
+     if(existingUser.expoPushToken){
+      await sendPushNotification(
+  existingUser.expoPushToken,
+  wasVerified ? "Document Verification Revoked" : "Document Verification Rejected",
+  rejectionMessage,
+);
+    }
     res.status(200).json({
       status: true,
       message: isHealthProvider
