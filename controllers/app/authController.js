@@ -987,7 +987,7 @@ if (!id) {
 }
 
 exports.updatePatientDetails = async (req, res) => {
-  const id = req.user.id;
+  const userId = req.user.id;
   const {
       fullname,
       cellphoneNumber,
