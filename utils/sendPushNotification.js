@@ -6,7 +6,7 @@ const admin = require('../config/firebase');
  * @param {string} body - Notification body
  * @param {object} [data] - Optional custom data payload
  */
-const sendPushNotification = async (fcmToken, title, body, data) => {
+const sendPushNotifications = async (fcmToken, title, body, data) => {
   if (!fcmToken) {
     console.warn("FCM token missing");
     return;
@@ -37,4 +37,4 @@ const sendPushNotification = async (fcmToken, title, body, data) => {
   }
 };
 
-module.exports = sendPushNotification;
+module.exports = sendPushNotifications;
