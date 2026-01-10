@@ -1689,7 +1689,7 @@ exports.approveHealthProviderDocuments = async (req, res) => {
     });
 
     if (existingUser.expoPushToken) {
-      await sendPushNotification(
+      await sendPushNotifications(
         existingUser.expoPushToken,
         "Application Update: Document Verification Complete",
         message
