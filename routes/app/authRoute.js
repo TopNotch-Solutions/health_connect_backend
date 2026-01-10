@@ -28,9 +28,9 @@ authRouter.patch("/update-id-back",tokenAuthMiddleware,checkUser, uploadSingleBa
 authRouter.patch("/update-annual-qualification",tokenAuthMiddleware,checkUser, uploadannualQualification.uploadSingleAnnual, updateHPCNAQualification);
 authRouter.patch("/update-primary-qualification",tokenAuthMiddleware,checkUser, uploadprimaryQualification.uploadSinglePrimary, updateFinalQualification);
 authRouter.patch("/update-prescribing-certificate", tokenAuthMiddleware,checkUser, uploadPrescribingCertificate.uploadPrescribingCertificate, updateDispensingCertificateLicence);
-authRouter.get("/all-users",tokenAuthMiddleware,checkUser, getAllAppUsers);
-authRouter.patch("/approve-documents/:id",tokenAuthMiddleware,checkUser, approveHealthProviderDocuments);
-authRouter.patch("/reject-documents/:id", tokenAuthMiddleware,checkUser, rejectHealthProviderDocuments);
+authRouter.get("/all-users", getAllAppUsers);
+authRouter.patch("/approve-documents/:id", approveHealthProviderDocuments);
+authRouter.patch("/reject-documents/:id",  rejectHealthProviderDocuments);
 authRouter.patch("/update-push-token", tokenAuthMiddleware,checkUser, updatePushToken);
 authRouter.patch("/logout", tokenAuthMiddleware,checkUser, logout);
 authRouter.get("/retrieve-jwt-token", getAppToken);
