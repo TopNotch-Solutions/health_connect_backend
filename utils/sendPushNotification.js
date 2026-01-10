@@ -7,6 +7,7 @@ const admin = require('../config/firebase');
  * @param {object} [data] - Optional custom data payload
  */
 const sendPushNotifications = async (fcmToken, title, body, data) => {
+  console.log("Sending push notification to token:", fcmToken, "with title:", title, "and body:", body);
   if (!fcmToken) {
     console.warn("FCM token missing");
     return;
