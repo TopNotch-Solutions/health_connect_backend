@@ -97,6 +97,53 @@ io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   // Handle user joining with a role
+  // Helper function to check if a provider matches an ailment category based on specializations
+  const providerMatchesAilment = (provider, ailmentCategory) => {
+    if (!ailmentCategory || !provider) {
+      return false;
+    }
+
+    // Check if provider role matches ailment category's provider type (if specified)
+    if (ailmentCategory.provider) {
+      const roleMapping = {
+        "doctor": "Doctor",
+        "nurse": "Nurse",
+        "physiotherapist": "Physiotherapist",
+        "social worker": "Social Worker"
+      };
+      const expectedProviderType = roleMapping[provider.role?.toLowerCase()];
+      if (expectedProviderType && ailmentCategory.provider !== expectedProviderType) {
+        return false;
+      }
+    }
+
+    // Check if provider has any specializations that match the ailment category's specializations
+    if (!ailmentCategory.specialization || ailmentCategory.specialization.length === 0) {
+      // If ailment has no specializations, allow all providers of matching role
+      return true;
+    }
+
+    if (!provider.specializations || provider.specializations.length === 0) {
+      // Provider has no specializations, don't match
+      return false;
+    }
+
+    // Convert ailment specializations to strings for comparison
+    const ailmentSpecializationIds = ailmentCategory.specialization.map(spec => 
+      spec.toString ? spec.toString() : spec
+    );
+
+    // Check if provider has any matching specialization
+    const hasMatchingSpecialization = provider.specializations.some(providerSpec => {
+      const providerSpecStr = providerSpec.toString ? providerSpec.toString() : providerSpec;
+      return ailmentSpecializationIds.some(ailmentSpecId => 
+        ailmentSpecId.toString() === providerSpecStr.toString()
+      );
+    });
+
+    return hasMatchingSpecialization;
+  };
+
   socket.on("join", (data) => {
     const { role, userId } = data;
     
@@ -251,8 +298,10 @@ io.on("connection", (socket) => {
       }
 
       // Notify all providers about new available request
-      // Only notify providers that are not currently busy
+      // Only notify providers that are not currently busy and match the ailment specialization
       const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
+      const ailmentCategory = request.ailmentCategoryId;
+      
       for (const [socketUserId, socketId] of userSockets.entries()) {
         const targetSocket = io.sockets.sockets.get(socketId);
         if (!targetSocket || !targetSocket.role || targetSocket.role === "patient") continue;
@@ -264,6 +313,11 @@ io.on("connection", (socket) => {
         }
         if (!provider) {
             provider = await User.findOne({ walletID: socketUserId });
+        }
+
+        // Check if provider matches the ailment category's specializations
+        if (!providerMatchesAilment(provider, ailmentCategory)) {
+          continue; // Skip this provider if they don't match the specialization
         }
 
         let providerObjectId = provider ? provider._id : null;
@@ -342,19 +396,23 @@ io.on("connection", (socket) => {
       const { providerId } = data;
       console.log('🔍 getAvailableRequests handler - providerId:', providerId);
 
+      // Get provider details to check specializations
+      let provider = null;
+      let validProviderId = null;
+
       // If providerId provided, hide available requests when provider is busy
       if (providerId) {
-        let validProviderId = providerId;
         if (!mongoose.Types.ObjectId.isValid(providerId)) {
-          const user = await User.findOne({ walletID: providerId });
-          if (user) {
-            validProviderId = user._id; // Use ObjectId directly for queries
+          provider = await User.findOne({ walletID: providerId });
+          if (provider) {
+            validProviderId = provider._id; // Use ObjectId directly for queries
           } else {
             // Provider not found in DB yet; treat as not busy and continue to show 'searching' items
             validProviderId = null;
           }
         } else {
           validProviderId = new mongoose.Types.ObjectId(providerId);
+          provider = await User.findById(validProviderId);
         }
         console.log('🔍 Converted providerId to:', validProviderId);
         
@@ -383,12 +441,22 @@ io.on("connection", (socket) => {
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
-      console.log('✅ Found requests count:', requests.length);
-      console.log('✅ Requests IDs:', requests.map(r => r._id));
-      if (requests.length > 0) {
-        console.log('✅ First request:', JSON.stringify(requests[0], null, 2));
+      // Filter requests based on provider's specializations
+      let filteredRequests = requests;
+      if (provider) {
+        filteredRequests = requests.filter(request => {
+          const ailmentCategory = request.ailmentCategoryId;
+          return providerMatchesAilment(provider, ailmentCategory);
+        });
+        console.log(`✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`);
       }
-      socket.emit("availableRequests", requests);
+
+      console.log('✅ Found requests count:', filteredRequests.length);
+      console.log('✅ Requests IDs:', filteredRequests.map(r => r._id));
+      if (filteredRequests.length > 0) {
+        console.log('✅ First request:', JSON.stringify(filteredRequests[0], null, 2));
+      }
+      socket.emit("availableRequests", filteredRequests);
     } catch (error) {
       console.error('❌ getAvailableRequests error:', error);
       socket.emit("requestError", { error: error.message });
@@ -885,9 +953,10 @@ io.on("connection", (socket) => {
           await request.save();
         }
 
-        // Check if there are any available providers (not busy)
+        // Check if there are any available providers (not busy and matching specializations)
         const providerRoles = ["doctor", "nurse", "physiotherapist", "social worker:"];
         const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
+        const ailmentCategory = request.ailmentCategoryId;
         
         // Get all online provider user IDs by checking socket roles
         const onlineProviderWalletIds = [];
@@ -898,12 +967,17 @@ io.on("connection", (socket) => {
           }
         }
 
-        // Convert walletIDs to ObjectIds for database query
+        // Convert walletIDs to full user objects to check specializations
         const onlineProviderUsers = await User.find({
           walletID: { $in: onlineProviderWalletIds },
-        }).select("_id");
+        });
 
-        const onlineProviderIds = onlineProviderUsers.map(user => user._id);
+        // Filter providers by specialization match
+        const matchingProviderUsers = onlineProviderUsers.filter(provider => 
+          providerMatchesAilment(provider, ailmentCategory)
+        );
+
+        const onlineProviderIds = matchingProviderUsers.map(user => user._id);
 
         // Check which providers are busy
         const busyProviderIds = onlineProviderIds.length > 0
@@ -913,7 +987,7 @@ io.on("connection", (socket) => {
             })
           : [];
 
-        // Available providers = online providers who are not busy and have not rejected
+        // Available providers = online providers who match specializations, are not busy, and have not rejected
         const availableProviderIds = onlineProviderIds.filter(
           id =>
             !busyProviderIds.some(busyId => busyId && busyId.toString() === id.toString()) &&
@@ -955,8 +1029,52 @@ io.on("connection", (socket) => {
         await request.save();
         // Notify rejecting provider to hide
         socket.emit("requestHidden", { requestId: request._id });
-        // Notify others there's an available request again
-        io.emit("newRequestAvailable", request);
+        
+        // Notify others there's an available request again, but only to providers matching specializations
+        const ailmentCategory = request.ailmentCategoryId;
+        const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
+        
+        for (const [socketUserId, socketId] of userSockets.entries()) {
+          const targetSocket = io.sockets.sockets.get(socketId);
+          if (!targetSocket || !targetSocket.role || targetSocket.role === "patient") continue;
+          
+          // Skip the rejecting provider
+          if (rejectingProviderIdObj && socketUserId === rejectingProviderIdObj.toString()) continue;
+          
+          // Find provider by walletID (socketUserId) or _id
+          let provider = null;
+          if (mongoose.Types.ObjectId.isValid(socketUserId)) {
+            provider = await User.findById(socketUserId);
+          }
+          if (!provider) {
+            provider = await User.findOne({ walletID: socketUserId });
+          }
+          
+          // Check if provider matches the ailment category's specializations
+          if (!providerMatchesAilment(provider, ailmentCategory)) {
+            continue; // Skip this provider if they don't match the specialization
+          }
+          
+          // Check if provider is busy
+          let providerObjectId = provider ? provider._id : null;
+          let isBusy = false;
+          if (providerObjectId) {
+            const activeForProvider = await ConsultationRequest.findOne({
+              providerId: providerObjectId,
+              status: { $in: providerActiveStatuses },
+            }).select("_id");
+            isBusy = Boolean(activeForProvider);
+          }
+          
+          // Check if provider has already rejected this request
+          const hasRejected = providerObjectId && request.rejectedBy.some(
+            rid => rid && rid.toString() === providerObjectId.toString()
+          );
+          
+          if (!isBusy && !hasRejected) {
+            io.to(socketId).emit("newRequestAvailable", request);
+          }
+        }
       } else {
         // For other statuses, default to standard update
         socket.emit("requestUpdated", request);
