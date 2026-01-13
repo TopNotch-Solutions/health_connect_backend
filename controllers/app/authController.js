@@ -622,9 +622,9 @@ exports.login = async (req, res) => {
   if (!password) {
     return res.status(400).json({ message: "Password is required." });
   }
-  if (!pushToken) {
-    return res.status(400).json({ message: "Device fcm token is required." });
-  }
+  // if (!pushToken) {
+  //   return res.status(400).json({ message: "Device fcm token is required." });
+  // }
   try {
     const user = await User.findOne({
       $or: [{ email: email }, { cellphoneNumber: email }],
