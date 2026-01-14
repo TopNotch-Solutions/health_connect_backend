@@ -7,7 +7,7 @@ transactionRouter.post("/fund-wallet",tokenAuthMiddleware,checkUser, fundOwnWall
 transactionRouter.post("/fund-other-wallet",tokenAuthMiddleware,checkUser, fundSomeonesWallet);
 transactionRouter.post("/wallet-wallet-transfer",tokenAuthMiddleware,checkUser, wallet2Wallet);
 transactionRouter.post("/withdraw-wallet-funds",tokenAuthMiddleware,checkUser, withdrawal);
-transactionRouter.get("/transaction-history",tokenAuthMiddleware,checkUser, all);
+transactionRouter.get("/transaction-history",all);
 transactionRouter.get("/all-transactions",tokenAuthMiddleware,checkUser, getAllTransactions);
 
 module.exports = transactionRouter;

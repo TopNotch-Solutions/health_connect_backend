@@ -7,6 +7,6 @@ const issueRouter = Router();
 
 issueRouter.post('/create-issue',tokenAuthMiddleware,checkUser, uploadIssueImage.uploadIssueImage, createIssue);
 issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, all);
-issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, getAllIssues);
+issueRouter.get('/all-issues',getAllIssues);
 
 module.exports = issueRouter;

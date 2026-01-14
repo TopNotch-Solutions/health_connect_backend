@@ -80,12 +80,10 @@ exports.registerPatient = async (req, res) => {
     return res.status(400).json({ message: "National ID number is required." });
   }
   if (!isValidCellphoneNumber(cellphoneNumber)) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Oops! That doesn�t look like a valid cellphone number. Please check and try again.",
-      });
+    return res.status(400).json({
+      message:
+        "Oops! That don't look like a valid cellphone number. Please check and try again.",
+    });
   }
   if (!idDocumentFront) {
     return res.status(400).json({ message: "ID front is required." });
@@ -118,12 +116,10 @@ exports.registerPatient = async (req, res) => {
     while (!isWalletIdUnique && attempts < maxAttempts) {
       walletId = walletIDGenerator();
       if (!walletId) {
-        return res
-          .status(500)
-          .json({
-            message:
-              "We're having trouble processing your request. Please try again shortly.",
-          });
+        return res.status(500).json({
+          message:
+            "We're having trouble processing your request. Please try again shortly.",
+        });
       }
 
       const checkWalletID = await User.findOne({ walletID: walletId });
@@ -134,12 +130,10 @@ exports.registerPatient = async (req, res) => {
     }
 
     if (!isWalletIdUnique) {
-      return res
-        .status(500)
-        .json({
-          message:
-            "We're having trouble processing your request. Please try again shortly.",
-        });
+      return res.status(500).json({
+        message:
+          "We're having trouble processing your request. Please try again shortly.",
+      });
     }
 
     const newUser = await User.create({
@@ -214,13 +208,11 @@ The Health Platform Team`,
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -275,12 +267,10 @@ exports.registerHealthProvider = async (req, res) => {
     return res.status(400).json({ message: "Cellphone number is required." });
   }
   if (!isValidCellphoneNumber(cellphoneNumber)) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Oops! That doesn�t look like a valid cellphone number. Please check and try again.",
-      });
+    return res.status(400).json({
+      message:
+        "Oops! That don't look like a valid cellphone number. Please check and try again.",
+    });
   }
   if (!email) {
     return res.status(400).json({ message: "Email is required." });
@@ -374,12 +364,10 @@ exports.registerHealthProvider = async (req, res) => {
     while (!isWalletIdUnique && attempts < maxAttempts) {
       walletId = walletIDGenerator();
       if (!walletId) {
-        return res
-          .status(500)
-          .json({
-            message:
-              "We�re having trouble processing your request. Please try again shortly.",
-          });
+        return res.status(500).json({
+          message:
+            "We're having trouble processing your request. Please try again shortly.",
+        });
       }
 
       const checkWalletID = await User.findOne({ walletID: walletId });
@@ -391,7 +379,7 @@ exports.registerHealthProvider = async (req, res) => {
     if (!isWalletIdUnique) {
       return res.status(500).json({
         message:
-          "We�re having trouble processing your request. Please try again shortly.",
+          "We're having trouble processing your request. Please try again shortly.",
       });
     }
     const newRole = role.toLowerCase();
@@ -470,13 +458,11 @@ The Health Platform Team`,
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -490,12 +476,10 @@ exports.verifyOtpReset = async (req, res) => {
     return res.status(400).json({ message: "OTP is required" });
   }
   if (!isValidCellphoneNumber(cellphoneNumber)) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Oops! That doesn�t look like a valid cellphone number. Please check and try again.",
-      });
+    return res.status(400).json({
+      message:
+        "Oops! That don't look like a valid cellphone number. Please check and try again.",
+    });
   }
 
   try {
@@ -520,12 +504,9 @@ exports.verifyOtpReset = async (req, res) => {
 
     const currentTime = new Date();
     if (currentTime > new Date(otpRecord.expireAt)) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "This OTP is no longer valid. Generate a new OTP to continue.",
-        });
+      return res.status(400).json({
+        message: "This OTP is no longer valid. Generate a new OTP to continue.",
+      });
     }
 
     const accountAlreadyExists = await User.findOne({
@@ -538,7 +519,7 @@ exports.verifyOtpReset = async (req, res) => {
       return res.status(404).json({
         activeUser: false,
         message:
-          "It looks like you don�t have an account yet. Please sign up to continue.",
+          "It looks like you don't have an account yet. Please sign up to continue.",
       });
     }
 
@@ -550,13 +531,11 @@ exports.verifyOtpReset = async (req, res) => {
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 exports.resetPassword = async (req, res) => {
@@ -590,7 +569,7 @@ exports.resetPassword = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -603,13 +582,11 @@ exports.resetPassword = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -816,13 +793,11 @@ exports.login = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 exports.userDetails = async (req, res) => {
@@ -893,13 +868,11 @@ exports.userDetails = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching userDetails:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 exports.removeProfileImage = async (req, res) => {
@@ -915,7 +888,7 @@ exports.removeProfileImage = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     if (existingUser.profileImage) {
@@ -939,13 +912,11 @@ exports.removeProfileImage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -968,7 +939,7 @@ exports.updateProfileImage = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     if (existingUser.profileImage) {
@@ -985,11 +956,27 @@ exports.updateProfileImage = async (req, res) => {
     }
 
     existingUser.profileImage = profileImagePath;
-    if (existingUser.role !== "patient") {
-      existingUser.isDocumentVerified = false;
-    }
+    existingUser.isDocumentVerified = false;
     await existingUser.save();
     const newUser = await User.findById(id);
+    await Notification.createNotification({
+      userId: newUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${newUser.fullname}, your profile details have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${newUser.fullname} has updated their profile detail and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your profile image has been updated successfully",
@@ -997,13 +984,11 @@ exports.updateProfileImage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1055,12 +1040,10 @@ exports.updatePatientDetails = async (req, res) => {
   }
 
   if (!isValidCellphoneNumber(cellphoneNumber)) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Oops! That doesn�t look like a valid cellphone number. Please check and try again.",
-      });
+    return res.status(400).json({
+      message:
+        "Oops! That don't look like a valid cellphone number. Please check and try again.",
+    });
   }
   try {
     const existingUser = await User.findById(userId);
@@ -1068,7 +1051,7 @@ exports.updatePatientDetails = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     existingUser.fullname = fullname;
@@ -1089,13 +1072,11 @@ exports.updatePatientDetails = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1123,12 +1104,10 @@ exports.updateHealthProvider = async (req, res) => {
     return res.status(400).json({ message: "Cellphone number is required." });
   }
   if (!isValidCellphoneNumber(cellphoneNumber)) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Oops! That doesn�t look like a valid cellphone number. Please check and try again.",
-      });
+    return res.status(400).json({
+      message:
+        "Oops! That don't look like a valid cellphone number. Please check and try again.",
+    });
   }
   if (!email) {
     return res.status(400).json({ message: "Email is required." });
@@ -1166,7 +1145,7 @@ exports.updateHealthProvider = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     existingUser.fullname = fullname;
@@ -1188,13 +1167,11 @@ exports.updateHealthProvider = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1215,11 +1192,9 @@ exports.changePassword = async (req, res) => {
     return res.status(400).json({ message: "Confirm password is required." });
   }
   if (currentPassword.toLowerCase() === newPassword.toLowerCase()) {
-    return res
-      .status(400)
-      .json({
-        message: "New password must be different from the current password.",
-      });
+    return res.status(400).json({
+      message: "New password must be different from the current password.",
+    });
   }
   if (newPassword.toLowerCase() !== confirmPassword.toLowerCase()) {
     return res
@@ -1237,7 +1212,7 @@ exports.changePassword = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
 
@@ -1263,13 +1238,11 @@ exports.changePassword = async (req, res) => {
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1292,7 +1265,7 @@ exports.updateIDFront = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
 
@@ -1312,19 +1285,35 @@ exports.updateIDFront = async (req, res) => {
     existingUser.idDocumentFront = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your ID front has been updated successfully",
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1347,7 +1336,7 @@ exports.updateIDBack = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     if (existingUser.idDocumentBack) {
@@ -1366,19 +1355,35 @@ exports.updateIDBack = async (req, res) => {
     existingUser.idDocumentBack = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your ID back has been updated successfully",
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1403,7 +1408,7 @@ exports.updateFinalQualification = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     if (existingUser.role === "patient") {
@@ -1428,19 +1433,35 @@ exports.updateFinalQualification = async (req, res) => {
     existingUser.finalQualification = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your final qualification has been updated successfully",
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1465,7 +1486,7 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
 
@@ -1491,6 +1512,24 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
     existingUser.dispensingCertificateLicence = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message:
@@ -1498,13 +1537,11 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1529,7 +1566,7 @@ exports.updateHPCNAQualification = async (req, res) => {
     if (!existingUser) {
       return res.status(404).json({
         message:
-          "It seems you don�t have an account yet. Please register to get started.",
+          "It seems you don't have an account yet. Please register to get started.",
       });
     }
     if (existingUser.role === "patient") {
@@ -1554,19 +1591,35 @@ exports.updateHPCNAQualification = async (req, res) => {
     existingUser.HPCNAQualification = imagePath;
     existingUser.isDocumentVerified = false;
     await existingUser.save();
+    await Notification.createNotification({
+      userId: existingUser._id,
+      type: "alert",
+      title: "Profile Verification",
+      status: "sent",
+      message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
+    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your HPCNA qualification has been updated successfully",
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We�re having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1578,13 +1631,11 @@ exports.getAllAppUsers = async (req, res) => {
     res.status(200).json({ status: true, users });
   } catch (error) {
     console.error("Error fetching app users:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1609,13 +1660,11 @@ exports.deactivateAccount = async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1705,13 +1754,11 @@ exports.approveHealthProviderDocuments = async (req, res) => {
     });
   } catch (error) {
     console.error("Error approving documents:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1792,13 +1839,11 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
     });
   } catch (error) {
     console.error("Error rejecting documents:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1831,13 +1876,11 @@ exports.updatePushToken = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating push token:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 exports.logout = async (req, res) => {
@@ -1864,13 +1907,11 @@ exports.logout = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating push token:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
 
@@ -1891,12 +1932,10 @@ exports.getAppToken = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating push token:", error);
-    res
-      .status(500)
-      .json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-        error,
-      });
+    res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error,
+    });
   }
 };
