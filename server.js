@@ -128,16 +128,29 @@ io.on("connection", (socket) => {
       return false;
     }
 
-    // Convert ailment specializations to strings for comparison
-    const ailmentSpecializationIds = ailmentCategory.specialization.map(spec => 
-      spec.toString ? spec.toString() : spec
-    );
+    // Extract specialization titles from ailment category
+    // If populated, specialization is an array of Specialization documents with title field
+    // If not populated, specialization is an array of ObjectIds
+    const ailmentSpecializationTitles = ailmentCategory.specialization.map(spec => {
+      // If populated (has title property), use the title
+      if (spec && typeof spec === 'object' && spec.title) {
+        return spec.title;
+      }
+      // If not populated (ObjectId), we can't match by title, return null
+      return null;
+    }).filter(title => title !== null);
 
-    // Check if provider has any matching specialization
-    const hasMatchingSpecialization = provider.specializations.some(providerSpec => {
-      const providerSpecStr = providerSpec.toString ? providerSpec.toString() : providerSpec;
-      return ailmentSpecializationIds.some(ailmentSpecId => 
-        ailmentSpecId.toString() === providerSpecStr.toString()
+    // If we couldn't extract any titles (not populated), return false
+    if (ailmentSpecializationTitles.length === 0) {
+      return false;
+    }
+
+    // Check if provider has any matching specialization title
+    // provider.specializations is an array of strings (titles)
+    const hasMatchingSpecialization = provider.specializations.some(providerSpecTitle => {
+      return ailmentSpecializationTitles.some(ailmentSpecTitle => 
+        providerSpecTitle === ailmentSpecTitle || 
+        providerSpecTitle.toLowerCase() === ailmentSpecTitle.toLowerCase()
       );
     });
 
@@ -398,37 +411,53 @@ io.on("connection", (socket) => {
       console.log('🔍 getAvailableRequests handler - providerId:', providerId);
 
       // Get provider details to check specializations
+      // Try to get providerId from data first, then fallback to socket.userId
+      const identifier = providerId || socket.userId;
       let provider = null;
       let validProviderId = null;
 
-      // If providerId provided, hide available requests when provider is busy
-      if (providerId) {
-        if (!mongoose.Types.ObjectId.isValid(providerId)) {
-          provider = await User.findOne({ walletID: providerId });
-          if (provider) {
-            validProviderId = provider._id; // Use ObjectId directly for queries
-          } else {
-            // Provider not found in DB yet; treat as not busy and continue to show 'searching' items
-            validProviderId = null;
-          }
+      if (!identifier) {
+        socket.emit("requestError", { 
+          error: "Provider identification is required to get available requests." 
+        });
+        return;
+      }
+
+      // Get provider by identifier (could be ObjectId or walletID)
+      if (!mongoose.Types.ObjectId.isValid(identifier)) {
+        provider = await User.findOne({ walletID: identifier });
+        if (provider) {
+          validProviderId = provider._id; // Use ObjectId directly for queries
         } else {
-          validProviderId = new mongoose.Types.ObjectId(providerId);
-          provider = await User.findById(validProviderId);
+          socket.emit("requestError", { 
+            error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
+          });
+          return;
         }
-        console.log('🔍 Converted providerId to:', validProviderId);
-        
-        // Busy if any active consultation
-        const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
-        if (validProviderId) {
-          const activeForProvider = await ConsultationRequest.findOne({
-            providerId: validProviderId,
-            status: { $in: providerActiveStatuses },
-          }).select("_id");
-          if (activeForProvider) {
-            console.log('⚠️ Provider is busy with request:', activeForProvider._id);
-            socket.emit("availableRequests", []);
-            return;
-          }
+      } else {
+        validProviderId = new mongoose.Types.ObjectId(identifier);
+        provider = await User.findById(validProviderId);
+        if (!provider) {
+          socket.emit("requestError", { 
+            error: "We couldn't find your account information. Please try logging in again or contact support if the issue persists." 
+          });
+          return;
+        }
+      }
+      
+      console.log('🔍 Converted providerId to:', validProviderId);
+      
+      // Busy if any active consultation
+      const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
+      if (validProviderId) {
+        const activeForProvider = await ConsultationRequest.findOne({
+          providerId: validProviderId,
+          status: { $in: providerActiveStatuses },
+        }).select("_id");
+        if (activeForProvider) {
+          console.log('⚠️ Provider is busy with request:', activeForProvider._id);
+          socket.emit("availableRequests", []);
+          return;
         }
       }
 
@@ -439,18 +468,21 @@ io.on("connection", (socket) => {
       console.log('🔍 Executing query with simplified filter:', JSON.stringify(availabilityFilter, null, 2));
       const requests = await ConsultationRequest.find(availabilityFilter)
         .populate("patientId", "fullname cellphoneNumber walletID")
-        .populate("ailmentCategoryId")
+        .populate({
+          path: "ailmentCategoryId",
+          populate: {
+            path: "specialization",
+            select: "title"
+          }
+        })
         .sort({ createdAt: -1 });
 
-      // Filter requests based on provider's specializations
-      let filteredRequests = requests;
-      if (provider) {
-        filteredRequests = requests.filter(request => {
-          const ailmentCategory = request.ailmentCategoryId;
-          return providerMatchesAilment(provider, ailmentCategory);
-        });
-        console.log(`✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`);
-      }
+      // Always filter requests based on provider's specializations
+      const filteredRequests = requests.filter(request => {
+        const ailmentCategory = request.ailmentCategoryId;
+        return providerMatchesAilment(provider, ailmentCategory);
+      });
+      console.log(`✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`);
 
       console.log('✅ Found requests count:', filteredRequests.length);
       console.log('✅ Requests IDs:', filteredRequests.map(r => r._id));
