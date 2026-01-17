@@ -766,6 +766,7 @@ exports.login = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               walletID: user.walletID,
               userId: user._id,
+              balance: user.balance,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
