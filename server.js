@@ -187,7 +187,6 @@ io.on("connection", (socket) => {
         ailmentCategoryId,
         urgency,
         address,
-        estimatedCost,
         paymentMethod,
       } = data;
 
@@ -238,34 +237,36 @@ io.on("connection", (socket) => {
         return;
       }
 
+      // Get ailment category to get initialCost (which becomes estimatedCost)
+      // Be tolerant if category id is missing or invalid (some older clients may send bad ids)
+      let initialCost = 0;
+      let ailmentCategory = null;
+      try {
+        if (ailmentCategoryId && mongoose.Types.ObjectId.isValid(ailmentCategoryId)) {
+          ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
+        }
+      } catch (e) {
+        console.warn('⚠️ createRequest: failed to lookup ailmentCategoryId', ailmentCategoryId, e);
+      }
+
+      if (ailmentCategory && ailmentCategory.initialCost != null) {
+        initialCost = parseFloat(ailmentCategory.initialCost) || 0;
+      } else {
+        console.warn('⚠️ createRequest: ailmentCategory not found or invalid - defaulting initialCost to 0');
+      }
+      
+      if (isNaN(initialCost) || initialCost <= 0) {
+        socket.emit("requestError", { 
+          error: "We're having trouble processing your request. Please try again or contact support if the issue persists." 
+        });
+        return;
+      }
+
+      // Use initialCost as estimatedCost
+      const estimatedCost = initialCost.toString();
+
       // Check wallet balance if payment method is wallet
       if (paymentMethod === "wallet") {
-        // Patient already fetched above, no need to fetch again
-
-        // Get ailment category to check initialCost. Be tolerant if category id is missing
-        // or invalid (some older clients may send bad ids). Default initialCost to 0.
-        let initialCost = 0;
-        let ailmentCategory = null;
-        try {
-          if (ailmentCategoryId && mongoose.Types.ObjectId.isValid(ailmentCategoryId)) {
-            ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
-          }
-        } catch (e) {
-          console.warn('⚠️ createRequest: failed to lookup ailmentCategoryId', ailmentCategoryId, e);
-        }
-
-        if (ailmentCategory && ailmentCategory.initialCost != null) {
-          initialCost = parseFloat(ailmentCategory.initialCost) || 0;
-        } else {
-          console.warn('⚠️ createRequest: ailmentCategory not found or invalid - defaulting initialCost to 0');
-        }
-        if (isNaN(initialCost) || initialCost <= 0) {
-          socket.emit("requestError", { 
-            error: "We're having trouble processing your request. Please try again or contact support if the issue persists." 
-          });
-          return;
-        }
-
         const patientBalance = parseFloat(patient.balance || 0);
         if (patientBalance < initialCost) {
           const shortfall = (initialCost - patientBalance).toFixed(2);
@@ -300,7 +301,7 @@ io.on("connection", (socket) => {
       // Notify all providers about new available request
       // Only notify providers that are not currently busy and match the ailment specialization
       const providerActiveStatuses = ["accepted", "en_route", "arrived", "in_progress"];
-      const ailmentCategory = request.ailmentCategoryId;
+      const populatedAilmentCategory = request.ailmentCategoryId;
       
       for (const [socketUserId, socketId] of userSockets.entries()) {
         const targetSocket = io.sockets.sockets.get(socketId);
@@ -316,7 +317,7 @@ io.on("connection", (socket) => {
         }
 
         // Check if provider matches the ailment category's specializations
-        if (!providerMatchesAilment(provider, ailmentCategory)) {
+        if (!providerMatchesAilment(provider, populatedAilmentCategory)) {
           continue; // Skip this provider if they don't match the specialization
         }
 
