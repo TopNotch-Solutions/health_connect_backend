@@ -654,7 +654,7 @@ exports.login = async (req, res) => {
         );
         return res.status(403).json({
           status: false,
-          message: `You�ve made too many unsuccessful attempts. Please wait ${waitTime} minute(s) before trying again.`,
+          message: `You've made too many unsuccessful attempts. Please wait ${waitTime} minute(s) before trying again.`,
         });
       }
     }
@@ -841,6 +841,7 @@ exports.userDetails = async (req, res) => {
               role: user.role,
               cellphoneNumber: user.cellphoneNumber,
               walletID: user.walletID,
+              balance: user.balance,
               userId: user._id,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,
