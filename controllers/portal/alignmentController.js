@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 exports.create = async (req, res) => {
-    const {title, description, initialCost, specialization, provider} = req.body;
+    const {title, description, initialCost, specialization, provider, priority} = req.body;
     const image = req.file ? req.file.filename : null;
 
     if (!title) {
@@ -31,6 +31,11 @@ exports.create = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Ailment image is required." });
+    }
+     if (!priority) {
+      return res
+        .status(400)
+        .json({ message: "Ailment priority is required." });
     }
     // Normalize specialization to a proper array of ObjectId strings
     let specializationArray = specialization;
@@ -94,6 +99,7 @@ exports.create = async (req, res) => {
             initialCost,
             cost,
             commission,
+            priority,
             specialization: specializationArray,
             provider,
             image,
@@ -108,7 +114,7 @@ exports.create = async (req, res) => {
 
 exports.getAllAilments = async (req, res) => {
     try{
-    const ailments = await AilmentCategory.find().populate('specialization');   
+    const ailments = await AilmentCategory.find().populate('specialization').sort({ priority: 1 });   
     res.status(200).json({ ailments });
     }catch (error) {    
     console.error("Error registering patient:", error);
@@ -132,7 +138,7 @@ exports.getAilmentById = async (req, res) => {
 
 exports.updateAilment = async (req, res) => {
     const { id } = req.params;
-    const { title, description, initialCost, specialization, } = req.body; 
+    const { title, description, initialCost, specialization, priority} = req.body; 
     if (!title) {
       return res
         .status(400)
@@ -148,6 +154,11 @@ exports.updateAilment = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Initial cost is required." });
+    }
+    if (!priority) {
+      return res
+        .status(400)
+        .json({ message: "Priority is required." });
     }
     // Normalize specialization if provided
     let specializationArray = specialization;
@@ -198,6 +209,7 @@ exports.updateAilment = async (req, res) => {
     }
     ailment.title = title || ailment.title;
     ailment.description = description || ailment.description;
+    ailment.priority = priority || ailment.priority;
     
     // If initialCost is provided, recalculate commission and cost
     if (initialCost) {

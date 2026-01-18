@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { NUMBER } = require("sequelize");
 
 const ailmentCategorySchema = new mongoose.Schema(
   {
@@ -23,7 +24,12 @@ const ailmentCategorySchema = new mongoose.Schema(
       required: true,
       default: 0.00,
     },
-
+     priority:{
+    type: Number,
+    enum: [1, 2, 3],
+    default: 2,
+    required: true,
+  },
     specialization: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "specialization",

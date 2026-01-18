@@ -499,7 +499,7 @@ io.on("connection", (socket) => {
   // Get ailment categories via socket
   socket.on("getAilmentCategories", async () => {
     try {
-      const categories = await AilmentCategory.find().populate('specialization');
+      const categories = await AilmentCategory.find().populate('specialization').sort({ priority: 1 });
       socket.emit("ailmentCategories", categories);
     } catch (error) {
       socket.emit("requestError", { error: error.message });
@@ -795,7 +795,7 @@ io.on("connection", (socket) => {
       // Verify provider's document is verified before allowing consultation acceptance
       if (!provider.isDocumentVerified) {
         socket.emit("requestError", {
-          error: "Your account is pending verification. Please wait for our admin team to verify your information before accepting consultations. We'll notify you once your account has been verified. If verification is taking too long, you can log a ticket in the issues section.",
+          error: "Your account is pending verification. The admin must first approve your application before you can accept consultation requests. We'll notify you once your account has been verified. If verification is taking too long, please log a ticket in the issues section so we can assist you.",
         });
         return;
       }
