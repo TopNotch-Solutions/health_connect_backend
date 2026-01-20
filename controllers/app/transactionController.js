@@ -306,6 +306,11 @@ exports.getAllTransactions = async (req, res) => {
   }
 };
 exports.allEarnings = async (req, res) => {
+  const id = req.user.id;
+
+  if (!id) {
+    return res.status(400).json({ message: "User id is required" });
+  }
   try {
     const now = new Date();
 
@@ -331,6 +336,7 @@ exports.allEarnings = async (req, res) => {
     const result = await Transaction.aggregate([
       {
         $match: {
+          userId: new mongoose.Types.ObjectId(id),
           type: "earning",
           status: "completed",
           time: {
