@@ -1,6 +1,7 @@
 const Transaction = require("../../models/transaction");
 const User = require("../../models/user");
 const generateTransactionReference = require("../../utils/referrenceGenerator");
+const mongoose = require("mongoose");
 
 exports.fundOwnWallet = async (req, res) => {
   const id = req.user.id;
