@@ -305,3 +305,31 @@ exports.getAllTransactions = async (req, res) => {
     res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
   }
 };
+exports.allEarnings = async (req, res) => {
+  try {
+    const totalEarnings = await Transaction.aggregate([
+      {
+        $match: {
+          type: "earning",
+          status: "completed",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    res.status(200).json({
+      status: true,
+      totalEarnings: totalEarnings[0]?.totalAmount || 0,
+    });
+  } catch (error) {
+    console.error("Error fetching total earnings:", error);
+    res.status(500).json({
+      message: "We're having trouble processing your request. Please try again shortly.",
+    });
+  }
+};
