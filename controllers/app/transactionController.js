@@ -307,11 +307,36 @@ exports.getAllTransactions = async (req, res) => {
 };
 exports.allEarnings = async (req, res) => {
   try {
-    const totalEarnings = await Transaction.aggregate([
+    const now = new Date();
+
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+      0,
+      0,
+      0
+    );
+
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
+    const result = await Transaction.aggregate([
       {
         $match: {
           type: "earning",
           status: "completed",
+          time: {
+            $gte: startOfMonth,
+            $lte: endOfMonth,
+          },
         },
       },
       {
@@ -324,7 +349,7 @@ exports.allEarnings = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      totalEarnings: totalEarnings[0]?.totalAmount || 0,
+      currentMonthEarnings: result[0]?.totalAmount || 0,
     });
   } catch (error) {
     console.error("Error fetching total earnings:", error);
