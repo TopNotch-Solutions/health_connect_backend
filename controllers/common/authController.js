@@ -4,6 +4,9 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const User = require("../../models/user");
 const { isValidCellphoneNumber } = require("../../utils/cellphoneNumberValidation");
+const OtpRequestLimit = require("../../models/sendOtpValidator");
+const callExternalApi = require("../../utils/connectSMS");
+const MAX_DAILY_OTP_REQUESTS = 6;
 
 exports.sendOtp = async (req, res) => {
   const { cellphoneNumber } = req.body;
@@ -17,6 +20,30 @@ exports.sendOtp = async (req, res) => {
 }
 
   try {
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+let otpLimit = await OtpRequestLimit.findOne({
+  cellphoneNumber,
+  date: today,
+});
+
+if (!otpLimit) {
+  otpLimit = await OtpRequestLimit.create({
+    cellphoneNumber,
+    date: today,
+    requestCount: 1,
+  });
+} else {
+  if (otpLimit.requestCount >= MAX_DAILY_OTP_REQUESTS) {
+    return res.status(429).json({
+      message:
+        "You have reached the maximum number of OTP requests for today. Please try again tomorrow.",
+    });
+  }
+
+  otpLimit.requestCount += 1;
+  await otpLimit.save();
+}
     await OTP.deleteMany({ cellphoneNumber });
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const createdAt = new Date();
@@ -29,6 +56,12 @@ exports.sendOtp = async (req, res) => {
       createdAt: createdAt,
       expireAt: expireAt,
     });
+    callExternalApi(
+  "HealthConnect",
+  `+${cellphoneNumber}`,
+  `Your Health Connect verification code is ${otp}. It will expire in 5 minutes. Do not share this code with anyone. Health Connect will never ask for your OTP.`
+);
+
     console.log(`OTP for ${cellphoneNumber} is ${otp}`);
     res
       .status(200)
