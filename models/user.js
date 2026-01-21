@@ -36,10 +36,6 @@ const userSchema = new mongoose.Schema({
     enum: ["Male", "Female"],
     required: false,
   },
-  nationalID: {
-    type: String,
-    required: false,
-  },
   hpcnaNumber: {
     type: String,
     required: false,
@@ -64,6 +60,10 @@ const userSchema = new mongoose.Schema({
     default: 0.00,
   },
   address: {
+    type: String,
+    required: true,
+  },
+  bio: {
     type: String,
     required: false,
   },
