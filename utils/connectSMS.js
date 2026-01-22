@@ -1,10 +1,10 @@
 require("dotenv").config();
 const fetch = require("node-fetch");
 
-async function callExternalApi(param1, param4, param5) {
+async function callExternalApi(param4, param5) {
   try {
     const url = new URL("https://connectsms.mtc.com.na/api.asmx/SendSMS");
-    url.searchParams.append("from_number", param1);
+    url.searchParams.append("from_number", process.env.SMS_API_SENDERID);
     url.searchParams.append("username", process.env.SMS_API_USERNAME);
     url.searchParams.append("password", process.env.SMS_API_PASSWORD);
     url.searchParams.append("destination", param4);
