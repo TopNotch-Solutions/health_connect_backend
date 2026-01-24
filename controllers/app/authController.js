@@ -235,6 +235,7 @@ exports.registerHealthProvider = async (req, res) => {
     bio,
     pushToken,
   } = req.body;
+  console.log(req.body);
   const files = req.files;
 
   let profileImagePath = files.profileImage
