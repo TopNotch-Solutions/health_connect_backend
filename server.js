@@ -827,17 +827,17 @@ io.on("connection", (socket) => {
         const providerBalance = parseFloat(provider.balance || 0);
         console.log('💰 Commission:', commission, 'Provider Balance:', providerBalance, 'Is NaN:', isNaN(commission));
 
-        if (isNaN(commission) || commission < 0) {
-          console.error('❌ Invalid commission value:', request.ailmentCategoryId ? request.ailmentCategoryId.commission : 'null', 'Parsed:', commission);
-          console.log('💰 Skipping commission check (commission is 0 or invalid)');
-        } else if (commission > 0 && providerBalance < commission) {
-          const shortfall = (commission - providerBalance).toFixed(2);
-          console.error('❌ Provider insufficient balance. Need:', commission, 'Have:', providerBalance);
-          socket.emit("requestError", {
-            error: `You need N$${commission.toFixed(2)} in your wallet to accept this cash payment consultation, but you currently have N$${providerBalance.toFixed(2)}. Please add N$${shortfall} to your wallet to proceed.`,
-          });
-          return;
-        }
+        // if (isNaN(commission) || commission < 0) {
+        //   console.error('❌ Invalid commission value:', request.ailmentCategoryId ? request.ailmentCategoryId.commission : 'null', 'Parsed:', commission);
+        //   console.log('💰 Skipping commission check (commission is 0 or invalid)');
+        // } else if (commission > 0 && providerBalance < commission) {
+        //   const shortfall = (commission - providerBalance).toFixed(2);
+        //   console.error('❌ Provider insufficient balance. Need:', commission, 'Have:', providerBalance);
+        //   socket.emit("requestError", {
+        //     error: `You need N$${commission.toFixed(2)} in your wallet to accept this cash payment consultation, but you currently have N$${providerBalance.toFixed(2)}. Please add N$${shortfall} to your wallet to proceed.`,
+        //   });
+        //   return;
+        // }
       }
 
       request.status = "accepted";
