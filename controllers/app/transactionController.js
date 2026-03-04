@@ -1,3 +1,4 @@
+const Package = require("../../models/packages");
 const Transaction = require("../../models/transaction");
 const User = require("../../models/user");
 const generateTransactionReference = require("../../utils/referrenceGenerator");
@@ -5,7 +6,7 @@ const mongoose = require("mongoose");
 
 exports.fundOwnWallet = async (req, res) => {
   const id = req.user.id;
-  const { amount, cardNumber, expiryDate, cvv, cardHolder } = req.body;
+  const { amount, cardNumber, expiryDate, cvv, cardHolder, packageId } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
@@ -32,7 +33,7 @@ exports.fundOwnWallet = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "It seems you don’t have an account yet. Please register to get started." });
     }
-
+   const myPackage = await Package.findById(packageId)
     const referrence = generateTransactionReference();
     const newAmount = parseFloat(amount);
     await Transaction.create({
@@ -41,12 +42,11 @@ exports.fundOwnWallet = async (req, res) => {
       walletID: user.walletID,
       time: new Date(),
       referrence,
-      type: "deposit",
+      type: "purchase",
       status: "completed",
     });
 
-    user.PreviousBalance = user.balance;
-    user.balance = user.balance + parseFloat(amount);
+    user.consultations = user.consultations + myPackage.consultations;
     await user.save();
 
     const userUpdated = await User.findOne({ _id: id }).select('-password -verifiedCellphoneNumber');
