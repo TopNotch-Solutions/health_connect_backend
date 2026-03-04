@@ -32,11 +32,6 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Ailment image is required." });
     }
-     if (!priority) {
-      return res
-        .status(400)
-        .json({ message: "Ailment priority is required." });
-    }
     // Normalize specialization to a proper array of ObjectId strings
     let specializationArray = specialization;
 

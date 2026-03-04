@@ -33,10 +33,12 @@ const faqAppRouter = require("./routes/app/faqRoute");
 const notificationPortalRouter = require("./routes/portal/notificationRoute");
 const advertsRouter = require("./routes/portal/advertsRoutes");
 const appAdvertRouter = require("./routes/app/advertsRoutes")
+const packagesAppRouter = require("./routes/app/packagesRoutes");
 
 
 const authPortalRouter = require("./routes/portal/authController");
 const requestPortalRouter = require("./routes/portal/requestRoute");
+const packagesPortalRouter = require("./routes/portal/packagesRoute");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -70,10 +72,12 @@ app.use("/api/portal/faq", faqPortalRouter);
 app.use("/api/app/faq", faqAppRouter);
 app.use("/api/portal/notification", notificationPortalRouter);
 app.use("/api/app/adverts", appAdvertRouter)
+app.use("/api/app/packages", packagesAppRouter);
 
 app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
 app.use("/api/portal/adverts", advertsRouter);
+app.use("/api/portal/packages", packagesPortalRouter);
 
 const onlineUsers = {
   patient: new Set(),

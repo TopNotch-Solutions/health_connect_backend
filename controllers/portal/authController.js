@@ -53,7 +53,7 @@ exports.create_portal_user = async (req, res) => {
     if (!department) {
       return res
         .status(400)
-        .json({ message: "Role is required." });
+        .json({ message: "Department is required." });
     }
     try {
       const existingUser = await PortalUser.findOne({ email });

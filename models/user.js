@@ -85,7 +85,11 @@ const userSchema = new mongoose.Schema({
     default: "patient",
     required: true,
   },
-  
+   consultations: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
   operationalZone: {
     type: String,
     required: false,
