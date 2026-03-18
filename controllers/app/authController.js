@@ -261,6 +261,9 @@ exports.registerHealthProvider = async (req, res) => {
     ? files.dispensingCertificateLicence[0].filename
     : null;
 
+  let trainingCertificate = files.trainingCertificate ? files.trainingCertificate[0].filename : null;
+  let NQAEvaluation = files.NQAEvaluation ? files.NQAEvaluation[0].filename : null;
+  
   if (!fullname) {
     return res.status(400).json({ message: "Fullname is required." });
   }
@@ -411,6 +414,8 @@ exports.registerHealthProvider = async (req, res) => {
       isDocumentsSubmitted: true,
       dispensingCertificateLicence,
       expoPushToken: pushToken,
+      trainingCertificate: trainingCertificate || null,
+      NQAEvaluation: NQAEvaluation || null
     });
     await Notification.createNotification({
       userId: newUser._id,

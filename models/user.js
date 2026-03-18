@@ -154,6 +154,14 @@ const userSchema = new mongoose.Schema({
   dispensingCertificateLicence:{
     type: String,
     require: false
+  },
+  trainingCertificate:{
+    type: String,
+    require: false
+  },
+  NQAEvaluation:{
+    type: String,
+    require: false
   }
   
 },{

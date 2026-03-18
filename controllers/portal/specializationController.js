@@ -19,7 +19,7 @@ exports.create = async (req, res) => {
         .json({ message: "Category is required." });
     }
     // Validate role value
-    const validRoles = ["doctor", "nurse", "physiotherapist", "social worker"];
+    const validRoles = ["doctor", "nurse", "physiotherapist", "social worker", "pharmacist"];
     if (!validRoles.includes(role)) {
       return res
         .status(400)

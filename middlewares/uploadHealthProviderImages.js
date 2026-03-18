@@ -19,6 +19,8 @@ module.exports = {
         { name: 'idDocumentBack', maxCount: 1 },
         { name: 'finalQualification', maxCount: 1 },
         { name: 'HPCNAQualification', maxCount: 1 },
-        { name: 'dispensingCertificateLicence', maxCount: 1 }
+        { name: 'dispensingCertificateLicence', maxCount: 1 },
+         { name: 'trainingCertificate', maxCount: 1 },
+        { name: 'NQAEvaluation', maxCount: 1 },
     ])
 };
