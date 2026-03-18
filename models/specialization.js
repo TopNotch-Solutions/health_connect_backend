@@ -12,7 +12,7 @@ const specializationSchema = new mongoose.Schema(
     },
     role: {
       type: String, 
-      enum: ["doctor", "nurse", "physiotherapist", "social worker"],
+      enum: ["doctor", "nurse", "physiotherapist", "social worker", "pharmacist"],
       default: "doctor", 
       required: true,
     },
