@@ -841,6 +841,7 @@ exports.userDetails = async (req, res) => {
               region: user.region,
               town: user.town,
               isAccountVerified: user.isAccountVerified,
+              
             }
           : {
               fullname: user.fullname,
@@ -872,6 +873,7 @@ exports.userDetails = async (req, res) => {
               finalQualification: user.finalQualification,
               idDocumentFront: user.idDocumentFront,
               idDocumentBack: user.idDocumentBack,
+              consultations: user.consultations
             },
     });
   } catch (error) {
