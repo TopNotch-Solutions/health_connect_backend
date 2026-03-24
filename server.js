@@ -205,8 +205,11 @@ io.on("connection", (socket) => {
         urgency,
         address,
         paymentMethod,
+        consultationMode,
       } = data;
 
+
+      console.log(data);
       // Active statuses where a patient is considered to have an ongoing request
       const activePatientStatuses = [
         "searching",
@@ -301,8 +304,9 @@ io.on("connection", (socket) => {
         address,
         preferredTime: Date.now(),
         estimatedCost,
-        paymentMethod: paymentMethod || "wallet",
+        paymentMethod: paymentMethod,
         status: "searching",
+        consultationMode,
       });
 
       await request.save();

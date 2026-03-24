@@ -96,6 +96,12 @@ const consultationRequestSchema = new mongoose.Schema(
       followUpInstructions: { type: String },
       followUpDate: { type: Date },
     },
+    consultationMode: {
+      type: String,
+      enum: ["house_visit", "video_consultation"],
+      required: true,
+      default: "pending",
+    },
     // Payment details
     paymentStatus: {
       type: String,
