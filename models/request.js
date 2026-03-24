@@ -100,7 +100,7 @@ const consultationRequestSchema = new mongoose.Schema(
       type: String,
       enum: ["house_visit", "video_consultation"],
       required: true,
-      default: "pending",
+      default: "house_visit",
     },
     // Payment details
     paymentStatus: {
