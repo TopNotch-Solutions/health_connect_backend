@@ -1,9 +1,9 @@
 const { Router } = require('express');
-const { fundOwnWallet, fundSomeonesWallet, wallet2Wallet, withdrawal, all, getAllTransactions, allEarnings } = require('../../controllers/app/transactionController');
+const {fundSomeonesWallet, wallet2Wallet, withdrawal, all, getAllTransactions, allEarnings, purchasePackage } = require('../../controllers/app/transactionController');
 const { tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddleware');
 const transactionRouter = Router();
 
-transactionRouter.post("/fund-wallet",tokenAuthMiddleware,checkUser, fundOwnWallet);
+transactionRouter.post("/purchase-package",tokenAuthMiddleware,checkUser, purchasePackage);
 transactionRouter.post("/fund-other-wallet",tokenAuthMiddleware,checkUser, fundSomeonesWallet);
 transactionRouter.post("/wallet-wallet-transfer",tokenAuthMiddleware,checkUser, wallet2Wallet);
 transactionRouter.post("/withdraw-wallet-funds",tokenAuthMiddleware,checkUser, withdrawal);

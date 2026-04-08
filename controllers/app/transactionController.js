@@ -4,29 +4,18 @@ const User = require("../../models/user");
 const generateTransactionReference = require("../../utils/referrenceGenerator");
 const mongoose = require("mongoose");
 
-exports.fundOwnWallet = async (req, res) => {
+exports.purchasePackage = async (req, res) => {
   const id = req.user.id;
-  const { amount, cardNumber, expiryDate, cvv, cardHolder, packageId } = req.body;
+  const { packageId } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
   }
 
-  if (!amount) {
-    return res.status(400).json({ message: "Amount is required" });
+  if (!packageId) {
+    return res.status(400).json({ message: "Package ID is required" });
   }
-  if (!cardNumber) {
-    return res.status(400).json({ message: "Card number is required" });
-  }
-  if (!expiryDate) {
-    return res.status(400).json({ message: "Card expiry date is required" });
-  }
-  if (!cvv) {
-    return res.status(400).json({ message: "CVV is required" });
-  }
-  if (!cardHolder) {
-    return res.status(400).json({ message: "Cardholder is required" });
-  }
+
 
   try {
     const user = await User.findOne({ _id: id });
@@ -35,10 +24,9 @@ exports.fundOwnWallet = async (req, res) => {
     }
    const myPackage = await Package.findById(packageId)
     const referrence = generateTransactionReference();
-    const newAmount = parseFloat(amount);
     await Transaction.create({
       userId: id,
-      amount: newAmount,
+      amount: myPackage.amount,
       walletID: user.walletID,
       time: new Date(),
       referrence,
@@ -50,8 +38,8 @@ exports.fundOwnWallet = async (req, res) => {
     await user.save();
 
     const userUpdated = await User.findOne({ _id: id }).select('-password -verifiedCellphoneNumber');
-    return res.status(201).json({
-      message: "Fund successfully deposited into own wallet.",
+    return res.status(200).json({
+      message: "Package successfully purchased.",
       user: userUpdated
     });
   } catch (error) {
