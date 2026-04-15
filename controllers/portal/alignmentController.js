@@ -117,7 +117,7 @@ exports.create = async (req, res) => {
             specialization: specializationArray,
             provider,
             supportsTeleconsultation: parseBooleanish(
-              supportsTeleconsultation,
+              conferrencing,
               false,
             ),
             conferrencing: parseBooleanish(
@@ -254,9 +254,9 @@ exports.updateAilment = async (req, res) => {
     }
     if (supportsTeleconsultation !== undefined) {
       ailment.supportsTeleconsultation = parseBooleanish(
-        supportsTeleconsultation,
-        ailment.supportsTeleconsultation,
-      );
+    conferrencing,
+    ailment.conferrencing,
+  );
     }
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });

@@ -1325,7 +1325,7 @@ io.on("connection", (socket) => {
 
       // Behavior depends on current status
       // 1) 'searching': keep the request available to others, but hide it for this provider
-      // 2) 'pending': clear providerId and move back to 'searching' (unless no providers remain)
+      // 2) 'pending': clear providerId and move back to 'searching'
       if (request.status === "searching") {
         if (rejectingProviderIdObj) {
           // Record this provider has rejected so they won't see it again
@@ -1339,88 +1339,10 @@ io.on("connection", (socket) => {
           await request.save();
         }
 
-        // Check if there are any available providers (not busy and matching specializations)
-        const providerRoles = [
-          "doctor",
-          "nurse",
-          "physiotherapist",
-          "social worker:",
-        ];
-        const providerActiveStatuses = [
-          "accepted",
-          "en_route",
-          "arrived",
-          "in_progress",
-        ];
-        const ailmentCategory = request.ailmentCategoryId;
-
-        // Get all online provider user IDs by checking socket roles
-        const onlineProviderWalletIds = [];
-        for (const [userId, socketId] of userSockets.entries()) {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket && socket.role && providerRoles.includes(socket.role)) {
-            onlineProviderWalletIds.push(userId);
-          }
-        }
-
-        // Convert walletIDs to full user objects to check specializations
-        const onlineProviderUsers = await User.find({
-          walletID: { $in: onlineProviderWalletIds },
-        });
-
-        // Filter providers by specialization match
-        const matchingProviderUsers = onlineProviderUsers.filter((provider) =>
-          providerMatchesAilment(provider, ailmentCategory),
-        );
-
-        const onlineProviderIds = matchingProviderUsers.map((user) => user._id);
-
-        // Check which providers are busy
-        const busyProviderIds =
-          onlineProviderIds.length > 0
-            ? await ConsultationRequest.distinct("providerId", {
-                providerId: { $in: onlineProviderIds },
-                status: { $in: providerActiveStatuses },
-              })
-            : [];
-
-        // Available providers = online providers who match specializations, are not busy, and have not rejected
-        const availableProviderIds = onlineProviderIds.filter(
-          (id) =>
-            !busyProviderIds.some(
-              (busyId) => busyId && busyId.toString() === id.toString(),
-            ) &&
-            !request.rejectedBy.some(
-              (rid) => rid && rid.toString() === id.toString(),
-            ),
-        );
-
-        // If no providers are available, notify patient with friendly message
-        if (availableProviderIds.length === 0) {
-          const patientWalletId =
-            request.patientId.walletID || request.patientId._id.toString();
-          const patientSocketId = userSockets.get(patientWalletId);
-          if (patientSocketId) {
-            io.to(patientSocketId).emit("providerUnavailable", {
-              requestId: request._id,
-              message:
-                "All our health providers are currently busy. Please try again later or contact support for assistance.",
-              ailmentCategory:
-                request.ailmentCategoryId?.title || "your request",
-            });
-          }
-          // Optionally expire the request since nobody can take it
-          request.status = "expired";
-          await request.save();
-          if (patientSocketId) {
-            io.to(patientSocketId).emit("requestUpdated", request);
-          }
-          io.emit("requestStatusChanged", { requestId, status: "expired" });
-        } else {
-          // Hide from rejecting provider only
-          socket.emit("requestHidden", { requestId: request._id });
-          // Still available to others; no global 'rejected' broadcast
-        }
+        // Hide from rejecting provider only.
+        // Request remains searching and will only expire via timeout scheduler.
+        socket.emit("requestHidden", { requestId: request._id });
+        // Still available to others; no global 'rejected' broadcast
       } else if (request.status === "pending") {
         // If it was assigned and provider rejected, put back to searching for others (unless none are available)
         request.providerId = undefined;
