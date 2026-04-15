@@ -255,7 +255,7 @@ exports.updateAilment = async (req, res) => {
     if (supportsTeleconsultation !== undefined) {
       ailment.supportsTeleconsultation = parseBooleanish(
     conferrencing,
-    ailment.conferrencing,
+    ailment.supportsTeleconsultation,
   );
     }
     await ailment.save();
