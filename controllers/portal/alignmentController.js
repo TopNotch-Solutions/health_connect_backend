@@ -22,7 +22,6 @@ exports.create = async (req, res) => {
       provider,
       priority,
       supportsTeleconsultation,
-      conferrencing,
     } = req.body;
     const image = req.file ? req.file.filename : null;
 
@@ -117,11 +116,7 @@ exports.create = async (req, res) => {
             specialization: specializationArray,
             provider,
             supportsTeleconsultation: parseBooleanish(
-              conferrencing,
-              false,
-            ),
-            conferrencing: parseBooleanish(
-              conferrencing,
+              supportsTeleconsultation,
               false,
             ),
             image,
@@ -167,7 +162,6 @@ exports.updateAilment = async (req, res) => {
       specialization,
       priority,
       supportsTeleconsultation,
-      conferrencing,
     } = req.body; 
     if (!title) {
       return res
@@ -235,13 +229,6 @@ exports.updateAilment = async (req, res) => {
     ailment.title = title || ailment.title;
     ailment.description = description || ailment.description;
     ailment.priority = priority || ailment.priority;
-    if (conferrencing !== undefined) {
-  ailment.conferrencing = parseBooleanish(
-    conferrencing,
-    ailment.conferrencing,
-  );
-}
-    
     // If initialCost is provided, recalculate commission and cost
     if (initialCost) {
       ailment.initialCost = initialCost;
@@ -252,12 +239,7 @@ exports.updateAilment = async (req, res) => {
     if (specializationArray !== undefined) {
       ailment.specialization = specializationArray;
     }
-    if (conferrencing !== undefined) {
-      ailment.supportsTeleconsultation = parseBooleanish(
-        conferrencing,
-        ailment.supportsTeleconsultation,
-      );
-    } else if (supportsTeleconsultation !== undefined) {
+    if (supportsTeleconsultation !== undefined) {
       ailment.supportsTeleconsultation = parseBooleanish(
         supportsTeleconsultation,
         ailment.supportsTeleconsultation,

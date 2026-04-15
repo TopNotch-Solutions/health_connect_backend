@@ -47,10 +47,6 @@ const ailmentCategorySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    conferrencing: {
-      type: Boolean,
-      default: false,
-    },
   },
   {
     timestamps: true,
