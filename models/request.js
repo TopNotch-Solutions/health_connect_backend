@@ -23,6 +23,11 @@ const consultationRequestSchema = new mongoose.Schema(
         "searching", // Looking for available provider
         "pending", // Sent to specific provider, awaiting response
         "accepted", // Provider accepted
+        "payment_pending", // Video consultation accepted, waiting for patient payment
+        "paid", // Patient payment completed
+        "provider_confirmation_pending", // Waiting for provider to confirm readiness
+        "ready_for_call", // Both sides can enter the video room
+        "in_call", // Video consultation is live
         "rejected", // Provider rejected
         "en_route", // Provider is on the way
         "arrived", // Provider has arrived
@@ -124,6 +129,9 @@ const consultationRequestSchema = new mongoose.Schema(
       requested: { type: Date, default: Date.now },
       providerAssigned: { type: Date },
       providerAccepted: { type: Date },
+      paymentConfirmed: { type: Date },
+      providerConfirmed: { type: Date },
+      callStarted: { type: Date },
       providerEnRoute: { type: Date },
       providerArrived: { type: Date },
       consultationStarted: { type: Date },
@@ -162,7 +170,18 @@ consultationRequestSchema.pre("save", function(next) {
     const now = new Date();
     switch (this.status) {
       case "accepted":
+      case "payment_pending":
         this.timeline.providerAccepted = now;
+        break;
+      case "paid":
+        this.timeline.paymentConfirmed = now;
+        break;
+      case "ready_for_call":
+        this.timeline.providerConfirmed = now;
+        break;
+      case "in_call":
+        this.timeline.callStarted = now;
+        this.timeline.consultationStarted = now;
         break;
       case "en_route":
         this.timeline.providerEnRoute = now;
