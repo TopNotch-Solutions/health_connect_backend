@@ -403,16 +403,16 @@ io.on("connection", (socket) => {
       const estimatedCost = initialCost.toString();
 
       // Check wallet balance if payment method is wallet
-      if (paymentMethod === "wallet") {
-        const patientBalance = parseFloat(patient.balance || 0);
-        if (patientBalance < initialCost) {
-          const shortfall = (initialCost - patientBalance).toFixed(2);
-          socket.emit("requestError", {
-            error: `Your wallet balance is insufficient for this consultation. You need N$${initialCost.toFixed(2)}, but you currently have N$${patientBalance.toFixed(2)}. Please add N$${shortfall} to your wallet or choose Cash payment instead.`,
-          });
-          return;
-        }
-      }
+      // if (paymentMethod === "wallet") {
+      //   const patientBalance = parseFloat(patient.balance || 0);
+      //   if (patientBalance < initialCost) {
+      //     const shortfall = (initialCost - patientBalance).toFixed(2);
+      //     socket.emit("requestError", {
+      //       error: `Your wallet balance is insufficient for this consultation. You need N$${initialCost.toFixed(2)}, but you currently have N$${patientBalance.toFixed(2)}. Please add N$${shortfall} to your wallet or choose Cash payment instead.`,
+      //     });
+      //     return;
+      //   }
+      // }
 
       const request = new ConsultationRequest({
         patientId: validPatientId,
