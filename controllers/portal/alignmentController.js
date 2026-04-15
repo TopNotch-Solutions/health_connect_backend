@@ -252,11 +252,16 @@ exports.updateAilment = async (req, res) => {
     if (specializationArray !== undefined) {
       ailment.specialization = specializationArray;
     }
-    if (supportsTeleconsultation !== undefined) {
+    if (conferrencing !== undefined) {
       ailment.supportsTeleconsultation = parseBooleanish(
-    conferrencing,
-    ailment.supportsTeleconsultation,
-  );
+        conferrencing,
+        ailment.supportsTeleconsultation,
+      );
+    } else if (supportsTeleconsultation !== undefined) {
+      ailment.supportsTeleconsultation = parseBooleanish(
+        supportsTeleconsultation,
+        ailment.supportsTeleconsultation,
+      );
     }
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });
