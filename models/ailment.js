@@ -40,6 +40,10 @@ const ailmentCategorySchema = new mongoose.Schema(
       enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker"],
       required: false,
     },
+    supportsTeleconsultation: {
+      type: Boolean,
+      default: false,
+    },
     image: {
       type: String,
       required: true,

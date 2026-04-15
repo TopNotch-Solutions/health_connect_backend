@@ -3,8 +3,26 @@ const mongoose = require("mongoose");
 const fs = require("fs");
 const path = require("path");
 
+const parseBooleanish = (value, fallback = false) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
 exports.create = async (req, res) => {
-    const {title, description, initialCost, specialization, provider, priority} = req.body;
+    const {
+      title,
+      description,
+      initialCost,
+      specialization,
+      provider,
+      priority,
+      supportsTeleconsultation,
+    } = req.body;
     const image = req.file ? req.file.filename : null;
 
     if (!title) {
@@ -97,6 +115,10 @@ exports.create = async (req, res) => {
             priority,
             specialization: specializationArray,
             provider,
+            supportsTeleconsultation: parseBooleanish(
+              supportsTeleconsultation,
+              false,
+            ),
             image,
         });
         await ailment.save();
@@ -133,7 +155,14 @@ exports.getAilmentById = async (req, res) => {
 
 exports.updateAilment = async (req, res) => {
     const { id } = req.params;
-    const { title, description, initialCost, specialization, priority} = req.body; 
+    const {
+      title,
+      description,
+      initialCost,
+      specialization,
+      priority,
+      supportsTeleconsultation,
+    } = req.body; 
     if (!title) {
       return res
         .status(400)
@@ -215,6 +244,12 @@ exports.updateAilment = async (req, res) => {
     
     if (specializationArray !== undefined) {
       ailment.specialization = specializationArray;
+    }
+    if (supportsTeleconsultation !== undefined) {
+      ailment.supportsTeleconsultation = parseBooleanish(
+        supportsTeleconsultation,
+        ailment.supportsTeleconsultation,
+      );
     }
     await ailment.save();
     res.status(200).json({ message: "Ailment updated successfully", ailment });

@@ -24,6 +24,7 @@ const authRouter = require("./routes/common/authRoute");
 const authAppRouter = require("./routes/app/authRoute");
 const issueAppRouter = require("./routes/app/issueRoute");
 const notificationAppRouter = require("./routes/app/notificationRouter");
+const teleconsultationAppRouter = require("./routes/app/teleconsultationRoute");
 const transactionAppRouter = require("./routes/app/transactionRoute");
 const specializationAppRouter = require("./routes/app/specializationRoute");
 const specializationPortalRouter = require("./routes/portal/specializationRoute");
@@ -66,6 +67,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/app/auth", authAppRouter);
 app.use("/api/app/issue", issueAppRouter);
 app.use("/api/app/notification", notificationAppRouter);
+app.use("/api/app/teleconsultation", teleconsultationAppRouter);
 app.use("/api/app/transaction", transactionAppRouter);
 app.use("/api/app/specialization", specializationAppRouter);
 app.use("/api/portal/specialization", specializationPortalRouter);
@@ -229,6 +231,11 @@ io.on("connection", (socket) => {
         "searching",
         "pending",
         "accepted",
+        "payment_pending",
+        "paid",
+        "provider_confirmation_pending",
+        "ready_for_call",
+        "in_call",
         "en_route",
         "arrived",
         "in_progress",
@@ -355,6 +362,11 @@ io.on("connection", (socket) => {
       // Only notify providers that are not currently busy and match the ailment specialization
       const providerActiveStatuses = [
         "accepted",
+        "payment_pending",
+        "paid",
+        "provider_confirmation_pending",
+        "ready_for_call",
+        "in_call",
         "en_route",
         "arrived",
         "in_progress",
@@ -506,6 +518,11 @@ io.on("connection", (socket) => {
       // Busy if any active consultation
       const providerActiveStatuses = [
         "accepted",
+        "payment_pending",
+        "paid",
+        "provider_confirmation_pending",
+        "ready_for_call",
+        "in_call",
         "en_route",
         "arrived",
         "in_progress",
@@ -984,13 +1001,23 @@ io.on("connection", (socket) => {
         // }
       }
 
-      request.status = "accepted";
+      const nextStatus =
+        request.consultationMode === "video_consultation"
+          ? "payment_pending"
+          : "accepted";
+
+      request.status = nextStatus;
       request.providerId = validProviderId;
+      if (nextStatus === "payment_pending") {
+        request.paymentStatus = "pending";
+      }
       // Note: timeline.providerAccepted will be set automatically by pre-save hook
       // No need to manually set providerAssigned
 
       console.log(
-        "💾 Saving request with status: accepted, providerId:",
+        "💾 Saving request with status:",
+        nextStatus,
+        "providerId:",
         validProviderId,
       );
       console.log(
@@ -1073,9 +1100,18 @@ io.on("connection", (socket) => {
         try {
           await Notification.createNotification({
             userId: patientUser._id,
-            type: "consultation_accepted",
-            title: "Request Accepted",
-            message: `${request.providerId.fullname} has accepted your request.`,
+            type:
+              nextStatus === "payment_pending"
+                ? "consultation_payment_pending"
+                : "consultation_accepted",
+            title:
+              nextStatus === "payment_pending"
+                ? "Payment Required"
+                : "Request Accepted",
+            message:
+              nextStatus === "payment_pending"
+                ? `${request.providerId.fullname} accepted your teleconsultation. Complete payment to continue.`
+                : `${request.providerId.fullname} has accepted your request.`,
             status: "sent",
             data: { requestId: request._id },
           });
@@ -1089,8 +1125,12 @@ io.on("connection", (socket) => {
         ) {
           sendPushNotification(
             patientUser.expoPushToken,
-            "Request Accepted",
-            `${request.providerId.fullname} has accepted your request.`,
+            nextStatus === "payment_pending"
+              ? "Payment Required"
+              : "Request Accepted",
+            nextStatus === "payment_pending"
+              ? `${request.providerId.fullname} accepted your teleconsultation. Complete payment to continue.`
+              : `${request.providerId.fullname} has accepted your request.`,
             { requestId: request._id },
           );
         }
@@ -1102,7 +1142,7 @@ io.on("connection", (socket) => {
 
       // Notify all providers to refresh available requests
       console.log("📨 Broadcasting status change to all providers...");
-      io.emit("requestStatusChanged", { requestId, status: "accepted" });
+      io.emit("requestStatusChanged", { requestId, status: nextStatus });
       console.log("✅ acceptRequest completed successfully");
     } catch (error) {
       console.error("❌ acceptRequest error:", error);
@@ -1178,6 +1218,11 @@ io.on("connection", (socket) => {
         ];
         const providerActiveStatuses = [
           "accepted",
+          "payment_pending",
+          "paid",
+          "provider_confirmation_pending",
+          "ready_for_call",
+          "in_call",
           "en_route",
           "arrived",
           "in_progress",
@@ -1272,6 +1317,11 @@ io.on("connection", (socket) => {
         const ailmentCategory = request.ailmentCategoryId;
         const providerActiveStatuses = [
           "accepted",
+          "payment_pending",
+          "paid",
+          "provider_confirmation_pending",
+          "ready_for_call",
+          "in_call",
           "en_route",
           "arrived",
           "in_progress",
@@ -1401,6 +1451,11 @@ io.on("connection", (socket) => {
       // Validate status transitions
       const validTransitions = {
         accepted: ["en_route", "cancelled"],
+        payment_pending: ["paid", "cancelled"],
+        paid: ["provider_confirmation_pending", "ready_for_call", "cancelled"],
+        provider_confirmation_pending: ["ready_for_call", "cancelled"],
+        ready_for_call: ["in_call", "cancelled"],
+        in_call: ["completed", "cancelled"],
         en_route: ["arrived", "cancelled"],
         arrived: ["in_progress", "completed", "cancelled"],
         in_progress: ["completed", "cancelled"],
@@ -1416,9 +1471,56 @@ io.on("connection", (socket) => {
         return;
       }
 
+      if (status === "paid") {
+        const patientIdentifier = providerId || socket.userId;
+        let validPatientId = null;
+
+        if (!patientIdentifier) {
+          socket.emit("requestError", {
+            error: "Patient identification is required to confirm payment.",
+          });
+          return;
+        }
+
+        if (mongoose.Types.ObjectId.isValid(patientIdentifier)) {
+          validPatientId = new mongoose.Types.ObjectId(patientIdentifier);
+        } else {
+          const patientUser = await User.findOne({ walletID: patientIdentifier });
+          validPatientId = patientUser ? patientUser._id : null;
+        }
+
+        if (
+          !validPatientId ||
+          !request.patientId ||
+          request.patientId.toString() !== validPatientId.toString()
+        ) {
+          socket.emit("requestError", {
+            error:
+              "Only the patient who created this request can confirm teleconsultation payment.",
+          });
+          return;
+        }
+
+        if (request.consultationMode !== "video_consultation") {
+          socket.emit("requestError", {
+            error: "Payment confirmation is only available for teleconsultations.",
+          });
+          return;
+        }
+
+        request.paymentStatus = "paid";
+      }
+
       // Validate provider can only update their own requests
       if (
-        ["en_route", "arrived", "in_progress", "completed"].includes(status)
+        [
+          "ready_for_call",
+          "in_call",
+          "en_route",
+          "arrived",
+          "in_progress",
+          "completed",
+        ].includes(status)
       ) {
         // Use providerId from data if available, otherwise fallback to socket.userId
         const providerIdentifier = providerId || socket.userId;
@@ -1461,6 +1563,17 @@ io.on("connection", (socket) => {
           socket.emit("requestError", {
             error:
               "You are not assigned to this consultation request. Only the assigned provider can update this request.",
+          });
+          return;
+        }
+
+        if (
+          ["ready_for_call", "in_call"].includes(status) &&
+          request.consultationMode !== "video_consultation"
+        ) {
+          socket.emit("requestError", {
+            error:
+              "Teleconsultation call states are only available for video consultation requests.",
           });
           return;
         }
@@ -1693,7 +1806,27 @@ io.on("connection", (socket) => {
         let body = `Your request status is now ${status}`;
         let type = "consultation_updated";
 
-        if (status === "en_route") {
+        if (status === "payment_pending") {
+          title = "Payment Required";
+          body = `${request.providerId.fullname} accepted your teleconsultation. Complete payment to continue.`;
+          type = "consultation_payment_pending";
+        } else if (status === "paid") {
+          title = "Payment Received";
+          body = "Your payment was received. Waiting for provider confirmation.";
+          type = "consultation_paid";
+        } else if (status === "provider_confirmation_pending") {
+          title = "Awaiting Provider Confirmation";
+          body = "Your payment was received. Waiting for your provider to confirm readiness.";
+          type = "consultation_provider_confirmation_pending";
+        } else if (status === "ready_for_call") {
+          title = "Ready For Call";
+          body = "Your teleconsultation is ready to begin.";
+          type = "consultation_ready_for_call";
+        } else if (status === "in_call") {
+          title = "Consultation In Progress";
+          body = "Your video consultation is now in progress.";
+          type = "consultation_in_call";
+        } else if (status === "en_route") {
           title = "Provider En Route";
           body = `${request.providerId.fullname} is on the way!`;
           type = "consultation_en_route";
@@ -1858,6 +1991,11 @@ io.on("connection", (socket) => {
           // Check if the request was in an active status before cancellation
           const wasActiveStatus = [
             "accepted",
+            "payment_pending",
+            "paid",
+            "provider_confirmation_pending",
+            "ready_for_call",
+            "in_call",
             "en_route",
             "arrived",
             "in_progress",
