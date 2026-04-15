@@ -92,6 +92,29 @@ const onlineUsers = {
 // Store socket IDs by user role and userId for targeted messaging
 const userSockets = new Map(); // userId -> socketId
 
+const SEARCH_RADIUS_MAX_KM = 8;
+const SEARCH_RADIUS_STEP_MINUTES = 20;
+const SEARCH_EXPIRE_HOURS = 6;
+
+const getHoursSinceDate = (dateValue) => {
+  if (!dateValue) return Number.POSITIVE_INFINITY;
+  const timestamp = new Date(dateValue).getTime();
+  if (!Number.isFinite(timestamp)) return Number.POSITIVE_INFINITY;
+  return (Date.now() - timestamp) / (1000 * 60 * 60);
+};
+
+const getAllowedSearchRadiusKm = (createdAt) => {
+  const hoursElapsed = getHoursSinceDate(createdAt);
+  if (hoursElapsed >= SEARCH_EXPIRE_HOURS) {
+    return null;
+  }
+
+  const minutesElapsed = hoursElapsed * 60;
+  const steppedRadius =
+    Math.floor(minutesElapsed / SEARCH_RADIUS_STEP_MINUTES) + 1;
+  return Math.min(SEARCH_RADIUS_MAX_KM, steppedRadius);
+};
+
 // Expose socket data to request controller
 setSocketData(
   () => onlineUsers,
@@ -172,6 +195,64 @@ io.on("connection", (socket) => {
     );
 
     return hasMatchingSpecialization;
+  };
+
+  const isValidLatitude = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
+
+  const isValidLongitude = (value) =>
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= -180 &&
+    value <= 180;
+
+  const getDistanceInKm = (
+    startLatitude,
+    startLongitude,
+    endLatitude,
+    endLongitude,
+  ) => {
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const latitudeDelta = toRadians(endLatitude - startLatitude);
+    const longitudeDelta = toRadians(endLongitude - startLongitude);
+    const a =
+      Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+      Math.cos(toRadians(startLatitude)) *
+        Math.cos(toRadians(endLatitude)) *
+        Math.sin(longitudeDelta / 2) *
+        Math.sin(longitudeDelta / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  };
+
+  const getPatientCoordinatesFromRequest = (request) => {
+    const geoJsonCoordinates = request?.address?.coordinates?.coordinates;
+    if (
+      Array.isArray(geoJsonCoordinates) &&
+      geoJsonCoordinates.length >= 2 &&
+      typeof geoJsonCoordinates[0] === "number" &&
+      typeof geoJsonCoordinates[1] === "number"
+    ) {
+      return {
+        longitude: geoJsonCoordinates[0],
+        latitude: geoJsonCoordinates[1],
+      };
+    }
+
+    const trackedPatientLocation = request?.locationTracking?.patientLocation;
+    if (
+      trackedPatientLocation &&
+      typeof trackedPatientLocation.longitude === "number" &&
+      typeof trackedPatientLocation.latitude === "number"
+    ) {
+      return {
+        longitude: trackedPatientLocation.longitude,
+        latitude: trackedPatientLocation.latitude,
+      };
+    }
+
+    return null;
   };
 
   socket.on("join", (data) => {
@@ -460,8 +541,32 @@ io.on("connection", (socket) => {
   // Get available requests for providers
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
-      const { providerId } = data;
+      const { providerId, providerLocation, latitude, longitude } = data;
       console.log("🔍 getAvailableRequests handler - providerId:", providerId);
+
+      const providerLatitude = providerLocation?.latitude ?? latitude;
+      const providerLongitude = providerLocation?.longitude ?? longitude;
+      const providerCoordinates = {
+        latitude:
+          typeof providerLatitude === "string"
+            ? Number(providerLatitude)
+            : providerLatitude,
+        longitude:
+          typeof providerLongitude === "string"
+            ? Number(providerLongitude)
+            : providerLongitude,
+      };
+
+      if (
+        !isValidLatitude(providerCoordinates.latitude) ||
+        !isValidLongitude(providerCoordinates.longitude)
+      ) {
+        socket.emit("requestError", {
+          error:
+            "Provider location (valid latitude and longitude) is required to retrieve consultations.",
+        });
+        return;
+      }
 
       // Get provider details to check specializations
       // Try to get providerId from data first, then fallback to socket.userId
@@ -544,13 +649,38 @@ io.on("connection", (socket) => {
         })
         .sort({ createdAt: -1 });
 
-      // Always filter requests based on provider's specializations
+      // Always filter requests based on provider's specializations and dynamic distance window
       const filteredRequests = requests.filter((request) => {
         const ailmentCategory = request.ailmentCategoryId;
-        return providerMatchesAilment(provider, ailmentCategory);
+        if (!providerMatchesAilment(provider, ailmentCategory)) {
+          return false;
+        }
+
+        const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
+        if (!allowedRadiusKm) {
+          return false;
+        }
+
+        const patientCoordinates = getPatientCoordinatesFromRequest(request);
+        if (
+          !patientCoordinates ||
+          !isValidLatitude(patientCoordinates.latitude) ||
+          !isValidLongitude(patientCoordinates.longitude)
+        ) {
+          return false;
+        }
+
+        const distanceInKm = getDistanceInKm(
+          providerCoordinates.latitude,
+          providerCoordinates.longitude,
+          patientCoordinates.latitude,
+          patientCoordinates.longitude,
+        );
+
+        return distanceInKm <= allowedRadiusKm;
       });
       console.log(
-        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`,
+        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and time-based radius (1km/hour up to ${SEARCH_RADIUS_MAX_KM}km)`,
       );
 
       console.log("✅ Found requests count:", filteredRequests.length);
@@ -1169,88 +1299,10 @@ io.on("connection", (socket) => {
           await request.save();
         }
 
-        // Check if there are any available providers (not busy and matching specializations)
-        const providerRoles = [
-          "doctor",
-          "nurse",
-          "physiotherapist",
-          "social worker:",
-        ];
-        const providerActiveStatuses = [
-          "accepted",
-          "en_route",
-          "arrived",
-          "in_progress",
-        ];
-        const ailmentCategory = request.ailmentCategoryId;
-
-        // Get all online provider user IDs by checking socket roles
-        const onlineProviderWalletIds = [];
-        for (const [userId, socketId] of userSockets.entries()) {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket && socket.role && providerRoles.includes(socket.role)) {
-            onlineProviderWalletIds.push(userId);
-          }
-        }
-
-        // Convert walletIDs to full user objects to check specializations
-        const onlineProviderUsers = await User.find({
-          walletID: { $in: onlineProviderWalletIds },
-        });
-
-        // Filter providers by specialization match
-        const matchingProviderUsers = onlineProviderUsers.filter((provider) =>
-          providerMatchesAilment(provider, ailmentCategory),
-        );
-
-        const onlineProviderIds = matchingProviderUsers.map((user) => user._id);
-
-        // Check which providers are busy
-        const busyProviderIds =
-          onlineProviderIds.length > 0
-            ? await ConsultationRequest.distinct("providerId", {
-                providerId: { $in: onlineProviderIds },
-                status: { $in: providerActiveStatuses },
-              })
-            : [];
-
-        // Available providers = online providers who match specializations, are not busy, and have not rejected
-        const availableProviderIds = onlineProviderIds.filter(
-          (id) =>
-            !busyProviderIds.some(
-              (busyId) => busyId && busyId.toString() === id.toString(),
-            ) &&
-            !request.rejectedBy.some(
-              (rid) => rid && rid.toString() === id.toString(),
-            ),
-        );
-
-        // If no providers are available, notify patient with friendly message
-        if (availableProviderIds.length === 0) {
-          const patientWalletId =
-            request.patientId.walletID || request.patientId._id.toString();
-          const patientSocketId = userSockets.get(patientWalletId);
-          if (patientSocketId) {
-            io.to(patientSocketId).emit("providerUnavailable", {
-              requestId: request._id,
-              message:
-                "All our health providers are currently busy. Please try again later or contact support for assistance.",
-              ailmentCategory:
-                request.ailmentCategoryId?.title || "your request",
-            });
-          }
-          // Optionally expire the request since nobody can take it
-          request.status = "expired";
-          await request.save();
-          if (patientSocketId) {
-            io.to(patientSocketId).emit("requestUpdated", request);
-          }
-          io.emit("requestStatusChanged", { requestId, status: "expired" });
-        } else {
-          // Hide from rejecting provider only
-          socket.emit("requestHidden", { requestId: request._id });
-          // Still available to others; no global 'rejected' broadcast
-        }
+        // Keep request in searching and hide it only for the rejecting provider.
+        // Expiration is handled by the 6-hour search timeout scheduler.
+        socket.emit("requestHidden", { requestId: request._id });
+        // Still available to others; no global 'rejected' broadcast
       } else if (request.status === "pending") {
         // If it was assigned and provider rejected, put back to searching for others (unless none are available)
         request.providerId = undefined;
@@ -1945,6 +1997,90 @@ io.on("connection", (socket) => {
       );
     }
   });
+});
+
+// Scheduled job to expire stale searching consultation requests after 6 hours
+schedule.scheduleJob("*/10 * * * *", async () => {
+  console.log(
+    "Running task every 10 minutes - Expiring stale searching consultation requests...",
+  );
+
+  try {
+    const expiryCutoff = new Date(
+      Date.now() - SEARCH_EXPIRE_HOURS * 60 * 60 * 1000,
+    );
+    const staleRequests = await ConsultationRequest.find({
+      status: "searching",
+      createdAt: { $lte: expiryCutoff },
+    }).populate("patientId", "fullname walletID expoPushToken isPushNotificationEnabled");
+
+    if (staleRequests.length === 0) {
+      return;
+    }
+
+    for (const request of staleRequests) {
+      request.status = "expired";
+      await request.save();
+
+      const patientUser = request.patientId;
+      const notificationTitle = "No Available Healthcare Provider";
+      const notificationMessage =
+        "There are no available healthcare providers for your consultation request at this time.";
+
+      if (patientUser?._id) {
+        try {
+          await Notification.createNotification({
+            userId: patientUser._id,
+            type: "consultation_expired_no_provider",
+            title: notificationTitle,
+            message: notificationMessage,
+            status: "sent",
+            data: { requestId: request._id },
+          });
+        } catch (notificationError) {
+          console.error(
+            "Error creating consultation expiry notification:",
+            notificationError,
+          );
+        }
+
+        if (
+          patientUser.expoPushToken &&
+          patientUser.isPushNotificationEnabled
+        ) {
+          sendPushNotification(
+            patientUser.expoPushToken,
+            notificationTitle,
+            notificationMessage,
+            { requestId: request._id, type: "consultation_expired_no_provider" },
+          );
+        }
+      }
+
+      const patientWalletId = patientUser?.walletID || patientUser?._id?.toString();
+      const patientSocketId = patientWalletId
+        ? userSockets.get(patientWalletId)
+        : null;
+      if (patientSocketId) {
+        io.to(patientSocketId).emit("providerUnavailable", {
+          requestId: request._id,
+          message: notificationMessage,
+        });
+        io.to(patientSocketId).emit("requestUpdated", request);
+      }
+
+      io.emit("requestStatusChanged", {
+        requestId: request._id,
+        status: "expired",
+      });
+    }
+
+    console.log(
+      `Expired ${staleRequests.length} consultation request(s) that exceeded ${SEARCH_EXPIRE_HOURS} hours in searching status.`,
+    );
+  } catch (error) {
+    console.error("Error expiring stale consultation requests:", error);
+  }
 });
 
 schedule.scheduleJob("*/30 * * * *", async () => {
