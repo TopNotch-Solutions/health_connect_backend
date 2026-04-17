@@ -96,7 +96,6 @@ exports.getCallAccess = async (req, res) => {
       metadata: error?.metadata,
       response: error?.response,
     });
-
     return res.status(500).json({
       message:
         "We're having trouble preparing the teleconsultation call. Please try again shortly.",
@@ -106,4 +105,8 @@ exports.getCallAccess = async (req, res) => {
       },
     });
   }
+};
+
+module.exports = {
+  getCallAccess: exports.getCallAccess,
 };

@@ -94,29 +94,6 @@ const onlineUsers = {
 // Store socket IDs by user role and userId for targeted messaging
 const userSockets = new Map(); // userId -> socketId
 
-const SEARCH_RADIUS_MAX_KM = 8;
-const SEARCH_RADIUS_STEP_MINUTES = 20;
-const SEARCH_EXPIRE_HOURS = 6;
-
-const getHoursSinceDate = (dateValue) => {
-  if (!dateValue) return Number.POSITIVE_INFINITY;
-  const timestamp = new Date(dateValue).getTime();
-  if (!Number.isFinite(timestamp)) return Number.POSITIVE_INFINITY;
-  return (Date.now() - timestamp) / (1000 * 60 * 60);
-};
-
-const getAllowedSearchRadiusKm = (createdAt) => {
-  const hoursElapsed = getHoursSinceDate(createdAt);
-  if (hoursElapsed >= SEARCH_EXPIRE_HOURS) {
-    return null;
-  }
-
-  const minutesElapsed = hoursElapsed * 60;
-  const steppedRadius =
-    Math.floor(minutesElapsed / SEARCH_RADIUS_STEP_MINUTES) + 1;
-  return Math.min(SEARCH_RADIUS_MAX_KM, steppedRadius);
-};
-
 // Expose socket data to request controller
 setSocketData(
   () => onlineUsers,
@@ -197,64 +174,6 @@ io.on("connection", (socket) => {
     );
 
     return hasMatchingSpecialization;
-  };
-
-  const isValidLatitude = (value) =>
-    typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
-
-  const isValidLongitude = (value) =>
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= -180 &&
-    value <= 180;
-
-  const getDistanceInKm = (
-    startLatitude,
-    startLongitude,
-    endLatitude,
-    endLongitude,
-  ) => {
-    const toRadians = (degrees) => (degrees * Math.PI) / 180;
-    const earthRadiusKm = 6371;
-    const latitudeDelta = toRadians(endLatitude - startLatitude);
-    const longitudeDelta = toRadians(endLongitude - startLongitude);
-    const a =
-      Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
-      Math.cos(toRadians(startLatitude)) *
-        Math.cos(toRadians(endLatitude)) *
-        Math.sin(longitudeDelta / 2) *
-        Math.sin(longitudeDelta / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return earthRadiusKm * c;
-  };
-
-  const getPatientCoordinatesFromRequest = (request) => {
-    const geoJsonCoordinates = request?.address?.coordinates?.coordinates;
-    if (
-      Array.isArray(geoJsonCoordinates) &&
-      geoJsonCoordinates.length >= 2 &&
-      typeof geoJsonCoordinates[0] === "number" &&
-      typeof geoJsonCoordinates[1] === "number"
-    ) {
-      return {
-        longitude: geoJsonCoordinates[0],
-        latitude: geoJsonCoordinates[1],
-      };
-    }
-
-    const trackedPatientLocation = request?.locationTracking?.patientLocation;
-    if (
-      trackedPatientLocation &&
-      typeof trackedPatientLocation.longitude === "number" &&
-      typeof trackedPatientLocation.latitude === "number"
-    ) {
-      return {
-        longitude: trackedPatientLocation.longitude,
-        latitude: trackedPatientLocation.latitude,
-      };
-    }
-
-    return null;
   };
 
   socket.on("join", (data) => {
@@ -403,16 +322,16 @@ io.on("connection", (socket) => {
       const estimatedCost = initialCost.toString();
 
       // Check wallet balance if payment method is wallet
-      // if (paymentMethod === "wallet") {
-      //   const patientBalance = parseFloat(patient.balance || 0);
-      //   if (patientBalance < initialCost) {
-      //     const shortfall = (initialCost - patientBalance).toFixed(2);
-      //     socket.emit("requestError", {
-      //       error: `Your wallet balance is insufficient for this consultation. You need N$${initialCost.toFixed(2)}, but you currently have N$${patientBalance.toFixed(2)}. Please add N$${shortfall} to your wallet or choose Cash payment instead.`,
-      //     });
-      //     return;
-      //   }
-      // }
+      if (paymentMethod === "wallet") {
+        const patientBalance = parseFloat(patient.balance || 0);
+        if (patientBalance < initialCost) {
+          const shortfall = (initialCost - patientBalance).toFixed(2);
+          socket.emit("requestError", {
+            error: `Your wallet balance is insufficient for this consultation. You need N$${initialCost.toFixed(2)}, but you currently have N$${patientBalance.toFixed(2)}. Please add N$${shortfall} to your wallet or choose Cash payment instead.`,
+          });
+          return;
+        }
+      }
 
       const request = new ConsultationRequest({
         patientId: validPatientId,
@@ -553,32 +472,8 @@ io.on("connection", (socket) => {
   // Get available requests for providers
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
-      const { providerId, providerLocation, latitude, longitude } = data;
+      const { providerId } = data;
       console.log("🔍 getAvailableRequests handler - providerId:", providerId);
-
-      const providerLatitude = providerLocation?.latitude ?? latitude;
-      const providerLongitude = providerLocation?.longitude ?? longitude;
-      const providerCoordinates = {
-        latitude:
-          typeof providerLatitude === "string"
-            ? Number(providerLatitude)
-            : providerLatitude,
-        longitude:
-          typeof providerLongitude === "string"
-            ? Number(providerLongitude)
-            : providerLongitude,
-      };
-
-      if (
-        !isValidLatitude(providerCoordinates.latitude) ||
-        !isValidLongitude(providerCoordinates.longitude)
-      ) {
-        socket.emit("requestError", {
-          error:
-            "Provider location (valid latitude and longitude) is required to retrieve consultations.",
-        });
-        return;
-      }
 
       // Get provider details to check specializations
       // Try to get providerId from data first, then fallback to socket.userId
@@ -666,38 +561,13 @@ io.on("connection", (socket) => {
         })
         .sort({ createdAt: -1 });
 
-      // Always filter requests based on provider's specializations and dynamic distance window
+      // Always filter requests based on provider's specializations
       const filteredRequests = requests.filter((request) => {
         const ailmentCategory = request.ailmentCategoryId;
-        if (!providerMatchesAilment(provider, ailmentCategory)) {
-          return false;
-        }
-
-        const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
-        if (!allowedRadiusKm) {
-          return false;
-        }
-
-        const patientCoordinates = getPatientCoordinatesFromRequest(request);
-        if (
-          !patientCoordinates ||
-          !isValidLatitude(patientCoordinates.latitude) ||
-          !isValidLongitude(patientCoordinates.longitude)
-        ) {
-          return false;
-        }
-
-        const distanceInKm = getDistanceInKm(
-          providerCoordinates.latitude,
-          providerCoordinates.longitude,
-          patientCoordinates.latitude,
-          patientCoordinates.longitude,
-        );
-
-        return distanceInKm <= allowedRadiusKm;
+        return providerMatchesAilment(provider, ailmentCategory);
       });
       console.log(
-        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and time-based radius (1km/hour up to ${SEARCH_RADIUS_MAX_KM}km)`,
+        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`,
       );
 
       console.log("✅ Found requests count:", filteredRequests.length);
@@ -1325,7 +1195,7 @@ io.on("connection", (socket) => {
 
       // Behavior depends on current status
       // 1) 'searching': keep the request available to others, but hide it for this provider
-      // 2) 'pending': clear providerId and move back to 'searching'
+      // 2) 'pending': clear providerId and move back to 'searching' (unless no providers remain)
       if (request.status === "searching") {
         if (rejectingProviderIdObj) {
           // Record this provider has rejected so they won't see it again
@@ -1339,10 +1209,93 @@ io.on("connection", (socket) => {
           await request.save();
         }
 
-        // Hide from rejecting provider only.
-        // Request remains searching and will only expire via timeout scheduler.
-        socket.emit("requestHidden", { requestId: request._id });
-        // Still available to others; no global 'rejected' broadcast
+        // Check if there are any available providers (not busy and matching specializations)
+        const providerRoles = [
+          "doctor",
+          "nurse",
+          "physiotherapist",
+          "social worker:",
+        ];
+        const providerActiveStatuses = [
+          "accepted",
+          "payment_pending",
+          "paid",
+          "provider_confirmation_pending",
+          "ready_for_call",
+          "in_call",
+          "en_route",
+          "arrived",
+          "in_progress",
+        ];
+        const ailmentCategory = request.ailmentCategoryId;
+
+        // Get all online provider user IDs by checking socket roles
+        const onlineProviderWalletIds = [];
+        for (const [userId, socketId] of userSockets.entries()) {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket && socket.role && providerRoles.includes(socket.role)) {
+            onlineProviderWalletIds.push(userId);
+          }
+        }
+
+        // Convert walletIDs to full user objects to check specializations
+        const onlineProviderUsers = await User.find({
+          walletID: { $in: onlineProviderWalletIds },
+        });
+
+        // Filter providers by specialization match
+        const matchingProviderUsers = onlineProviderUsers.filter((provider) =>
+          providerMatchesAilment(provider, ailmentCategory),
+        );
+
+        const onlineProviderIds = matchingProviderUsers.map((user) => user._id);
+
+        // Check which providers are busy
+        const busyProviderIds =
+          onlineProviderIds.length > 0
+            ? await ConsultationRequest.distinct("providerId", {
+                providerId: { $in: onlineProviderIds },
+                status: { $in: providerActiveStatuses },
+              })
+            : [];
+
+        // Available providers = online providers who match specializations, are not busy, and have not rejected
+        const availableProviderIds = onlineProviderIds.filter(
+          (id) =>
+            !busyProviderIds.some(
+              (busyId) => busyId && busyId.toString() === id.toString(),
+            ) &&
+            !request.rejectedBy.some(
+              (rid) => rid && rid.toString() === id.toString(),
+            ),
+        );
+
+        // If no providers are available, notify patient with friendly message
+        if (availableProviderIds.length === 0) {
+          const patientWalletId =
+            request.patientId.walletID || request.patientId._id.toString();
+          const patientSocketId = userSockets.get(patientWalletId);
+          if (patientSocketId) {
+            io.to(patientSocketId).emit("providerUnavailable", {
+              requestId: request._id,
+              message:
+                "All our health providers are currently busy. Please try again later or contact support for assistance.",
+              ailmentCategory:
+                request.ailmentCategoryId?.title || "your request",
+            });
+          }
+          // Optionally expire the request since nobody can take it
+          request.status = "expired";
+          await request.save();
+          if (patientSocketId) {
+            io.to(patientSocketId).emit("requestUpdated", request);
+          }
+          io.emit("requestStatusChanged", { requestId, status: "expired" });
+        } else {
+          // Hide from rejecting provider only
+          socket.emit("requestHidden", { requestId: request._id });
+          // Still available to others; no global 'rejected' broadcast
+        }
       } else if (request.status === "pending") {
         // If it was assigned and provider rejected, put back to searching for others (unless none are available)
         request.providerId = undefined;
@@ -1498,7 +1451,7 @@ io.on("connection", (socket) => {
       // Validate status transitions
       const validTransitions = {
         accepted: ["en_route", "cancelled"],
-        payment_pending: ["paid", "cancelled"],
+        payment_pending: ["provider_confirmation_pending", "cancelled"],
         paid: ["provider_confirmation_pending", "ready_for_call", "cancelled"],
         provider_confirmation_pending: ["ready_for_call", "cancelled"],
         ready_for_call: ["in_call", "cancelled"],
@@ -1518,7 +1471,7 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (status === "paid") {
+      if (status === "provider_confirmation_pending") {
         const patientIdentifier = providerId || socket.userId;
         let validPatientId = null;
 
@@ -1555,12 +1508,13 @@ io.on("connection", (socket) => {
           return;
         }
 
-        request.paymentStatus = "paid";
+        request.paymentStatus = "pending";
       }
 
       // Validate provider can only update their own requests
       if (
         [
+          "paid",
           "ready_for_call",
           "in_call",
           "en_route",
@@ -1615,7 +1569,7 @@ io.on("connection", (socket) => {
         }
 
         if (
-          ["ready_for_call", "in_call"].includes(status) &&
+          ["paid", "ready_for_call", "in_call"].includes(status) &&
           request.consultationMode !== "video_consultation"
         ) {
           socket.emit("requestError", {
@@ -1624,6 +1578,10 @@ io.on("connection", (socket) => {
           });
           return;
         }
+      }
+
+      if (status === "ready_for_call") {
+        request.paymentStatus = "paid";
       }
 
       // Update provider location when status is en_route
@@ -1855,15 +1813,16 @@ io.on("connection", (socket) => {
 
         if (status === "payment_pending") {
           title = "Payment Required";
-          body = `${request.providerId.fullname} accepted your teleconsultation. Complete payment to continue.`;
+          body = `${request.providerId.fullname} accepted your teleconsultation. Pay the provider, then confirm payment in the app.`;
           type = "consultation_payment_pending";
         } else if (status === "paid") {
           title = "Payment Received";
-          body = "Your payment was received. Waiting for provider confirmation.";
+          body = "Your provider confirmed they received the payment.";
           type = "consultation_paid";
         } else if (status === "provider_confirmation_pending") {
-          title = "Awaiting Provider Confirmation";
-          body = "Your payment was received. Waiting for your provider to confirm readiness.";
+          title = "Payment Marked As Sent";
+          body =
+            "Your provider has been asked to confirm they received your payment.";
           type = "consultation_provider_confirmation_pending";
         } else if (status === "ready_for_call") {
           title = "Ready For Call";
@@ -2130,90 +2089,6 @@ io.on("connection", (socket) => {
       );
     }
   });
-});
-
-// Scheduled job to expire stale searching consultation requests after 6 hours
-schedule.scheduleJob("*/10 * * * *", async () => {
-  console.log(
-    "Running task every 10 minutes - Expiring stale searching consultation requests...",
-  );
-
-  try {
-    const expiryCutoff = new Date(
-      Date.now() - SEARCH_EXPIRE_HOURS * 60 * 60 * 1000,
-    );
-    const staleRequests = await ConsultationRequest.find({
-      status: "searching",
-      createdAt: { $lte: expiryCutoff },
-    }).populate("patientId", "fullname walletID expoPushToken isPushNotificationEnabled");
-
-    if (staleRequests.length === 0) {
-      return;
-    }
-
-    for (const request of staleRequests) {
-      request.status = "expired";
-      await request.save();
-
-      const patientUser = request.patientId;
-      const notificationTitle = "No Available Healthcare Provider";
-      const notificationMessage =
-        "There are no available healthcare providers for your consultation request at this time.";
-
-      if (patientUser?._id) {
-        try {
-          await Notification.createNotification({
-            userId: patientUser._id,
-            type: "consultation_expired_no_provider",
-            title: notificationTitle,
-            message: notificationMessage,
-            status: "sent",
-            data: { requestId: request._id },
-          });
-        } catch (notificationError) {
-          console.error(
-            "Error creating consultation expiry notification:",
-            notificationError,
-          );
-        }
-
-        if (
-          patientUser.expoPushToken &&
-          patientUser.isPushNotificationEnabled
-        ) {
-          sendPushNotification(
-            patientUser.expoPushToken,
-            notificationTitle,
-            notificationMessage,
-            { requestId: request._id, type: "consultation_expired_no_provider" },
-          );
-        }
-      }
-
-      const patientWalletId = patientUser?.walletID || patientUser?._id?.toString();
-      const patientSocketId = patientWalletId
-        ? userSockets.get(patientWalletId)
-        : null;
-      if (patientSocketId) {
-        io.to(patientSocketId).emit("providerUnavailable", {
-          requestId: request._id,
-          message: notificationMessage,
-        });
-        io.to(patientSocketId).emit("requestUpdated", request);
-      }
-
-      io.emit("requestStatusChanged", {
-        requestId: request._id,
-        status: "expired",
-      });
-    }
-
-    console.log(
-      `Expired ${staleRequests.length} consultation request(s) that exceeded ${SEARCH_EXPIRE_HOURS} hours in searching status.`,
-    );
-  } catch (error) {
-    console.error("Error expiring stale consultation requests:", error);
-  }
 });
 
 schedule.scheduleJob("*/30 * * * *", async () => {
