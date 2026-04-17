@@ -176,6 +176,85 @@ io.on("connection", (socket) => {
     return hasMatchingSpecialization;
   };
 
+  const SEARCH_RADIUS_MAX_KM = 8;
+  const SEARCH_RADIUS_STEP_MINUTES = 20;
+  const SEARCH_EXPIRE_HOURS = 6;
+
+  const isValidLatitude = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
+
+  const isValidLongitude = (value) =>
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= -180 &&
+    value <= 180;
+
+  const getDistanceInKm = (
+    startLatitude,
+    startLongitude,
+    endLatitude,
+    endLongitude,
+  ) => {
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const latitudeDelta = toRadians(endLatitude - startLatitude);
+    const longitudeDelta = toRadians(endLongitude - startLongitude);
+    const a =
+      Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+      Math.cos(toRadians(startLatitude)) *
+        Math.cos(toRadians(endLatitude)) *
+        Math.sin(longitudeDelta / 2) *
+        Math.sin(longitudeDelta / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  };
+
+  const getPatientCoordinatesFromRequest = (request) => {
+    const geoJsonCoordinates = request?.address?.coordinates?.coordinates;
+    if (
+      Array.isArray(geoJsonCoordinates) &&
+      geoJsonCoordinates.length >= 2 &&
+      typeof geoJsonCoordinates[0] === "number" &&
+      typeof geoJsonCoordinates[1] === "number"
+    ) {
+      return {
+        longitude: geoJsonCoordinates[0],
+        latitude: geoJsonCoordinates[1],
+      };
+    }
+
+    const trackedPatientLocation = request?.locationTracking?.patientLocation;
+    if (
+      trackedPatientLocation &&
+      typeof trackedPatientLocation.longitude === "number" &&
+      typeof trackedPatientLocation.latitude === "number"
+    ) {
+      return {
+        longitude: trackedPatientLocation.longitude,
+        latitude: trackedPatientLocation.latitude,
+      };
+    }
+
+    return null;
+  };
+
+  const getAllowedSearchRadiusKm = (createdAt) => {
+    const createdAtTime = new Date(createdAt).getTime();
+    if (!Number.isFinite(createdAtTime)) {
+      return null;
+    }
+
+    const hoursElapsed = (Date.now() - createdAtTime) / (1000 * 60 * 60);
+    if (hoursElapsed >= SEARCH_EXPIRE_HOURS) {
+      return null;
+    }
+
+    const minutesElapsed = hoursElapsed * 60;
+    const steppedRadius =
+      Math.floor(minutesElapsed / SEARCH_RADIUS_STEP_MINUTES) + 1;
+    return Math.min(SEARCH_RADIUS_MAX_KM, steppedRadius);
+  };
+
   socket.on("join", (data) => {
     const { role, userId } = data;
 
@@ -472,8 +551,32 @@ io.on("connection", (socket) => {
   // Get available requests for providers
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
-      const { providerId } = data;
+      const { providerId, providerLocation, latitude, longitude } = data;
       console.log("🔍 getAvailableRequests handler - providerId:", providerId);
+
+      const providerLatitude = providerLocation?.latitude ?? latitude;
+      const providerLongitude = providerLocation?.longitude ?? longitude;
+      const parsedProviderCoordinates = {
+        latitude:
+          typeof providerLatitude === "string"
+            ? Number(providerLatitude)
+            : providerLatitude,
+        longitude:
+          typeof providerLongitude === "string"
+            ? Number(providerLongitude)
+            : providerLongitude,
+      };
+
+      if (
+        !isValidLatitude(parsedProviderCoordinates.latitude) ||
+        !isValidLongitude(parsedProviderCoordinates.longitude)
+      ) {
+        socket.emit("requestError", {
+          error:
+            "Provider location (valid latitude and longitude) is required to retrieve consultations.",
+        });
+        return;
+      }
 
       // Get provider details to check specializations
       // Try to get providerId from data first, then fallback to socket.userId
@@ -561,13 +664,38 @@ io.on("connection", (socket) => {
         })
         .sort({ createdAt: -1 });
 
-      // Always filter requests based on provider's specializations
+      // Always filter requests based on provider specialization and dynamic distance window
       const filteredRequests = requests.filter((request) => {
         const ailmentCategory = request.ailmentCategoryId;
-        return providerMatchesAilment(provider, ailmentCategory);
+        if (!providerMatchesAilment(provider, ailmentCategory)) {
+          return false;
+        }
+
+        const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
+        if (!allowedRadiusKm) {
+          return false;
+        }
+
+        const patientCoordinates = getPatientCoordinatesFromRequest(request);
+        if (
+          !patientCoordinates ||
+          !isValidLatitude(patientCoordinates.latitude) ||
+          !isValidLongitude(patientCoordinates.longitude)
+        ) {
+          return false;
+        }
+
+        const distanceInKm = getDistanceInKm(
+          parsedProviderCoordinates.latitude,
+          parsedProviderCoordinates.longitude,
+          patientCoordinates.latitude,
+          patientCoordinates.longitude,
+        );
+
+        return distanceInKm <= allowedRadiusKm;
       });
       console.log(
-        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} based on provider specializations`,
+        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and dynamic radius (1km/${SEARCH_RADIUS_STEP_MINUTES}min up to ${SEARCH_RADIUS_MAX_KM}km)`,
       );
 
       console.log("✅ Found requests count:", filteredRequests.length);
