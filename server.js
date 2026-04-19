@@ -177,7 +177,7 @@ io.on("connection", (socket) => {
   };
 
   const SEARCH_RADIUS_MAX_KM = 8;
-  const SEARCH_RADIUS_STEP_MINUTES = 5;
+  const SEARCH_RADIUS_STEP_MINUTES = 1;
   const SEARCH_EXPIRE_HOURS = 6;
 
   const isValidLatitude = (value) =>
