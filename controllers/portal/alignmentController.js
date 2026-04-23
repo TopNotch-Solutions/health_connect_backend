@@ -13,14 +13,21 @@ const parseBooleanish = (value, fallback = false) => {
   return fallback;
 };
 
+const parseCostValue = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
 exports.create = async (req, res) => {
     const {
       title,
       description,
-      initialCost,
+      teleconsultationCost,
+      physicalconsultationCost,
       specialization,
       provider,
-      priority,
       supportsTeleconsultation,
     } = req.body;
     const image = req.file ? req.file.filename : null;
@@ -35,10 +42,27 @@ exports.create = async (req, res) => {
         .status(400)
         .json({ message: "Description is required." });
     }
-    if (!initialCost) {
-      return res
-        .status(400)
-        .json({ message: "Initial cost is required." });
+    const parsedTeleconsultationCost = parseCostValue(teleconsultationCost);
+    const parsedPhysicalconsultationCost = parseCostValue(
+      physicalconsultationCost,
+    );
+    if (
+      parsedTeleconsultationCost !== null &&
+      (isNaN(parsedTeleconsultationCost) || parsedTeleconsultationCost < 0)
+    ) {
+      return res.status(400).json({
+        message: "Teleconsultation cost must be a valid number greater or equal to 0.",
+      });
+    }
+    if (
+      parsedPhysicalconsultationCost !== null &&
+      (isNaN(parsedPhysicalconsultationCost) ||
+        parsedPhysicalconsultationCost < 0)
+    ) {
+      return res.status(400).json({
+        message:
+          "Physical consultation cost must be a valid number greater or equal to 0.",
+      });
     }
     if (!specialization) {
       return res
@@ -102,17 +126,17 @@ exports.create = async (req, res) => {
             .json({ message: "Ailment with this title already exists." });
         }
         
-        // Calculate commission (15% of initialCost) and cost (remaining amount)
-        const commission = initialCost * 0.15;
-        const cost = initialCost - commission;
-        
         const ailment = new AilmentCategory({
             title,
             description,
-            initialCost,
-            cost,
-            commission,
-            priority,
+            teleconsultationCost:
+              parsedTeleconsultationCost === undefined
+                ? null
+                : parsedTeleconsultationCost,
+            physicalconsultationCost:
+              parsedPhysicalconsultationCost === undefined
+                ? null
+                : parsedPhysicalconsultationCost,
             specialization: specializationArray,
             provider,
             supportsTeleconsultation: parseBooleanish(
@@ -131,7 +155,7 @@ exports.create = async (req, res) => {
 
 exports.getAllAilments = async (req, res) => {
     try{
-    const ailments = await AilmentCategory.find().populate('specialization').sort({ priority: 1 });   
+    const ailments = await AilmentCategory.find().populate('specialization').sort({ createdAt: -1 });   
     res.status(200).json({ ailments });
     }catch (error) {    
     console.error("Error registering patient:", error);
@@ -158,9 +182,9 @@ exports.updateAilment = async (req, res) => {
     const {
       title,
       description,
-      initialCost,
+      teleconsultationCost,
+      physicalconsultationCost,
       specialization,
-      priority,
       supportsTeleconsultation,
     } = req.body; 
     if (!title) {
@@ -174,10 +198,33 @@ exports.updateAilment = async (req, res) => {
         .status(400)
         .json({ message: "Description is required." });
     }
-    if (!initialCost) {
-      return res
-        .status(400)
-        .json({ message: "Initial cost is required." });
+    const parsedTeleconsultationCost =
+      teleconsultationCost !== undefined
+        ? parseCostValue(teleconsultationCost)
+        : undefined;
+    const parsedPhysicalconsultationCost =
+      physicalconsultationCost !== undefined
+        ? parseCostValue(physicalconsultationCost)
+        : undefined;
+    if (
+      parsedTeleconsultationCost !== undefined &&
+      parsedTeleconsultationCost !== null &&
+      (isNaN(parsedTeleconsultationCost) || parsedTeleconsultationCost < 0)
+    ) {
+      return res.status(400).json({
+        message: "Teleconsultation cost must be a valid number greater or equal to 0.",
+      });
+    }
+    if (
+      parsedPhysicalconsultationCost !== undefined &&
+      parsedPhysicalconsultationCost !== null &&
+      (isNaN(parsedPhysicalconsultationCost) ||
+        parsedPhysicalconsultationCost < 0)
+    ) {
+      return res.status(400).json({
+        message:
+          "Physical consultation cost must be a valid number greater or equal to 0.",
+      });
     }
     // Normalize specialization if provided
     let specializationArray = specialization;
@@ -228,12 +275,11 @@ exports.updateAilment = async (req, res) => {
     }
     ailment.title = title || ailment.title;
     ailment.description = description || ailment.description;
-    ailment.priority = priority || ailment.priority;
-    // If initialCost is provided, recalculate commission and cost
-    if (initialCost) {
-      ailment.initialCost = initialCost;
-      ailment.commission = initialCost * 0.15;
-      ailment.cost = initialCost - ailment.commission;
+    if (parsedTeleconsultationCost !== undefined) {
+      ailment.teleconsultationCost = parsedTeleconsultationCost;
+    }
+    if (parsedPhysicalconsultationCost !== undefined) {
+      ailment.physicalconsultationCost = parsedPhysicalconsultationCost;
     }
     
     if (specializationArray !== undefined) {

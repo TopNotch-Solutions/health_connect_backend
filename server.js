@@ -298,7 +298,6 @@ io.on("connection", (socket) => {
       const {
         patientId,
         ailmentCategoryId,
-        urgency,
         address,
         paymentMethod,
         consultationMode,
@@ -350,7 +349,7 @@ io.on("connection", (socket) => {
       if (existingActive) {
         await existingActive.populate(
           "patientId",
-          "fullname cellphoneNumber walletID",
+          "fullname cellphoneNumber",
         );
         await existingActive.populate("ailmentCategoryId");
 
@@ -362,63 +361,46 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Get ailment category to get initialCost (which becomes estimatedCost)
-      // Be tolerant if category id is missing or invalid (some older clients may send bad ids)
-      let initialCost = 0;
-      let ailmentCategory = null;
-      try {
-        if (
-          ailmentCategoryId &&
-          mongoose.Types.ObjectId.isValid(ailmentCategoryId)
-        ) {
-          ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
-        }
-      } catch (e) {
-        console.warn(
-          "⚠️ createRequest: failed to lookup ailmentCategoryId",
-          ailmentCategoryId,
-          e,
-        );
-      }
-
-      if (ailmentCategory && ailmentCategory.initialCost != null) {
-        initialCost = parseFloat(ailmentCategory.initialCost) || 0;
-      } else {
-        console.warn(
-          "⚠️ createRequest: ailmentCategory not found or invalid - defaulting initialCost to 0",
-        );
-      }
-
-      if (isNaN(initialCost) || initialCost <= 0) {
+      const ailmentCategory = await AilmentCategory.findById(ailmentCategoryId);
+      if (!ailmentCategory) {
         socket.emit("requestError", {
           error:
-            "We're having trouble processing your request. Please try again or contact support if the issue persists.",
+            "We couldn't find this consultation category. Please refresh and try again.",
         });
         return;
       }
 
-      // Use initialCost as estimatedCost
-      const estimatedCost = initialCost.toString();
-
-      // Check wallet balance if payment method is wallet
-      if (paymentMethod === "wallet") {
-        const patientBalance = parseFloat(patient.balance || 0);
-        if (patientBalance < initialCost) {
-          const shortfall = (initialCost - patientBalance).toFixed(2);
-          socket.emit("requestError", {
-            error: `Your wallet balance is insufficient for this consultation. You need N$${initialCost.toFixed(2)}, but you currently have N$${patientBalance.toFixed(2)}. Please add N$${shortfall} to your wallet or choose Cash payment instead.`,
-          });
-          return;
-        }
+      if (
+        consultationMode === "video_consultation" &&
+        !ailmentCategory.supportsTeleconsultation
+      ) {
+        socket.emit("requestError", {
+          error:
+            "This ailment category does not support video consultation. Please choose physical consultation.",
+        });
+        return;
       }
+
+      const selectedCost =
+        consultationMode === "video_consultation"
+          ? ailmentCategory.teleconsultationCost
+          : ailmentCategory.physicalconsultationCost;
+      const parsedEstimatedCost = parseFloat(selectedCost);
+      if (isNaN(parsedEstimatedCost) || parsedEstimatedCost <= 0) {
+        socket.emit("requestError", {
+          error:
+            "Consultation cost for this category is unavailable. Please contact support.",
+        });
+        return;
+      }
+
 
       const request = new ConsultationRequest({
         patientId: validPatientId,
         ailmentCategoryId,
-        urgency: urgency || "medium",
         address,
         preferredTime: Date.now(),
-        estimatedCost,
+        consultationCost: parsedEstimatedCost,
         paymentMethod: paymentMethod,
         status: "searching",
         consultationMode,
@@ -427,11 +409,11 @@ io.on("connection", (socket) => {
       await request.save();
       await request.populate(
         "patientId",
-        "fullname cellphoneNumber walletID profileImage",
+        "fullname cellphoneNumber profileImage",
       );
       await request.populate("ailmentCategoryId");
 
-      // Notify patient using their walletID
+      // Notify patient using their user id
       const patientSocketId = userSockets.get(patientId);
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestCreated", request);
@@ -461,13 +443,13 @@ io.on("connection", (socket) => {
         )
           continue;
 
-        // Find provider by walletID (socketUserId) or _id to determine busy status
+        // Find provider by _id to determine busy status
         let provider = null;
         if (mongoose.Types.ObjectId.isValid(socketUserId)) {
           provider = await User.findById(socketUserId);
         }
         if (!provider) {
-          provider = await User.findOne({ walletID: socketUserId });
+          provider = null;
         }
 
         // Check if provider matches the ailment category's specializations
@@ -537,8 +519,8 @@ io.on("connection", (socket) => {
       const requests = await ConsultationRequest.find({
         patientId: validPatientId,
       })
-        .populate("patientId", "fullname cellphoneNumber walletID")
-        .populate("providerId", "fullname cellphoneNumber role walletID")
+        .populate("patientId", "fullname cellphoneNumber")
+        .populate("providerId", "fullname cellphoneNumber role")
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
@@ -592,9 +574,9 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Get provider by identifier (could be ObjectId or walletID)
+      // Get provider by identifier (_id only)
       if (!mongoose.Types.ObjectId.isValid(identifier)) {
-        provider = await User.findOne({ walletID: identifier });
+        provider = null;
         if (provider) {
           validProviderId = provider._id; // Use ObjectId directly for queries
         } else {
@@ -654,7 +636,7 @@ io.on("connection", (socket) => {
         JSON.stringify(availabilityFilter, null, 2),
       );
       const requests = await ConsultationRequest.find(availabilityFilter)
-        .populate("patientId", "fullname cellphoneNumber walletID")
+        .populate("patientId", "fullname cellphoneNumber")
         .populate({
           path: "ailmentCategoryId",
           populate: {
@@ -721,7 +703,7 @@ io.on("connection", (socket) => {
     try {
       const categories = await AilmentCategory.find()
         .populate("specialization")
-        .sort({ priority: 1 });
+        .sort({ createdAt: -1 });
       socket.emit("ailmentCategories", categories);
     } catch (error) {
       socket.emit("requestError", { error: error.message });
@@ -786,17 +768,16 @@ io.on("connection", (socket) => {
       request.markModified("locationTracking");
 
       await request.save();
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role walletID",
+        "fullname cellphoneNumber role",
       );
       await request.populate("ailmentCategoryId");
 
       // Notify patient
-      const patientWalletId =
-        request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
+      const patientIdKey = request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientIdKey);
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
       }
@@ -817,12 +798,14 @@ io.on("connection", (socket) => {
       // Find the actual user ObjectId if providerId is not a valid ObjectId
       let validProviderId = providerId;
       if (!mongoose.Types.ObjectId.isValid(providerId)) {
-        const user = await User.findOne({ walletID: providerId });
+        const user = mongoose.Types.ObjectId.isValid(providerId)
+          ? await User.findById(providerId)
+          : null;
         if (user) {
           validProviderId = user._id; // Use ObjectId directly for queries
-          console.log("🔍 Converted walletID to ObjectId:", validProviderId);
+          console.log("🔍 Converted providerId to ObjectId:", validProviderId);
         } else {
-          console.log("⚠️ Provider not found in DB with walletID:", providerId);
+          console.log("⚠️ Provider not found in DB with providerId:", providerId);
           socket.emit("providerRequests", []);
           return;
         }
@@ -834,8 +817,8 @@ io.on("connection", (socket) => {
       const requests = await ConsultationRequest.find({
         providerId: validProviderId,
       })
-        .populate("patientId", "fullname cellphoneNumber walletID")
-        .populate("providerId", "fullname cellphoneNumber role walletID")
+        .populate("patientId", "fullname cellphoneNumber")
+        .populate("providerId", "fullname cellphoneNumber role")
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
@@ -957,9 +940,8 @@ io.on("connection", (socket) => {
       console.log("📍 Updating location for request:", requestId);
 
       // Broadcast location update to patient IMMEDIATELY (Real-time)
-      const patientWalletId =
-        request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
+      const patientIdKey = request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientIdKey);
 
       if (patientSocketId) {
         // console.log('📍 Broadcasting provider location to patient:', { requestId, location });
@@ -1037,10 +1019,10 @@ io.on("connection", (socket) => {
 
       if (!mongoose.Types.ObjectId.isValid(providerId)) {
         console.log(
-          "🔍 Provider ID is not ObjectId, looking up by walletID...",
+          "🔍 Provider ID is not ObjectId",
         );
-        provider = await User.findOne({ walletID: providerId });
-        console.log("📊 Provider found by walletID:", !!provider);
+        provider = null;
+        console.log("📊 Provider found by id:", !!provider);
         if (!provider) {
           socket.emit("requestError", {
             error:
@@ -1081,54 +1063,6 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Populate ailmentCategoryId to get commission
-      console.log("🔍 Populating ailmentCategoryId...");
-      await request.populate("ailmentCategoryId");
-      console.log("📊 ailmentCategoryId:", request.ailmentCategoryId);
-      console.log("📊 paymentMethod:", request.paymentMethod);
-
-      // Verify wallet balance for cash payments (deduction happens on completion)
-      if (request.paymentMethod === "cash") {
-        console.log("💰 Payment method is cash, checking commission...");
-
-        // If ailmentCategoryId isn't set (existing requests created without a proper category),
-        // default commission to 0 and allow acceptance. This prevents blocking providers from
-        // accepting older requests where the front-end didn't provide a valid ObjectId.
-        let commission = 0;
-        if (
-          request.ailmentCategoryId &&
-          request.ailmentCategoryId.commission != null
-        ) {
-          commission = parseFloat(request.ailmentCategoryId.commission) || 0;
-        } else {
-          console.warn(
-            "⚠️ ailmentCategoryId missing or has no commission - defaulting commission to 0",
-          );
-        }
-
-        const providerBalance = parseFloat(provider.balance || 0);
-        console.log(
-          "💰 Commission:",
-          commission,
-          "Provider Balance:",
-          providerBalance,
-          "Is NaN:",
-          isNaN(commission),
-        );
-
-        // if (isNaN(commission) || commission < 0) {
-        //   console.error('❌ Invalid commission value:', request.ailmentCategoryId ? request.ailmentCategoryId.commission : 'null', 'Parsed:', commission);
-        //   console.log('💰 Skipping commission check (commission is 0 or invalid)');
-        // } else if (commission > 0 && providerBalance < commission) {
-        //   const shortfall = (commission - providerBalance).toFixed(2);
-        //   console.error('❌ Provider insufficient balance. Need:', commission, 'Have:', providerBalance);
-        //   socket.emit("requestError", {
-        //     error: `You need N$${commission.toFixed(2)} in your wallet to accept this cash payment consultation, but you currently have N$${providerBalance.toFixed(2)}. Please add N$${shortfall} to your wallet to proceed.`,
-        //   });
-        //   return;
-        // }
-      }
-
       const nextStatus =
         request.consultationMode === "video_consultation"
           ? "payment_pending"
@@ -1166,22 +1100,18 @@ io.on("connection", (socket) => {
 
       console.log("✅ Request saved successfully");
 
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role walletID profileImage",
+        "fullname cellphoneNumber role profileImage",
       );
       await request.populate("ailmentCategoryId");
 
       // Emit acceptConfirmed to the assigned provider's socket (handshake to avoid client/server race)
       try {
-        const providerWalletId = request.providerId?.walletID;
         const providerId = request.providerId?._id?.toString();
 
         let providerSocketId = userSockets.get(providerId);
-        if (!providerSocketId && providerWalletId) {
-          providerSocketId = userSockets.get(providerWalletId);
-        }
 
         if (providerSocketId) {
           console.log(
@@ -1202,14 +1132,10 @@ io.on("connection", (socket) => {
       }
       console.log("✅ Request populated successfully");
 
-      // Notify patient - find patient's socket using their walletID or _id
-      const patientWalletId = request.patientId.walletID;
+      // Notify patient using their _id
       const patientId = request.patientId._id.toString();
 
       let patientSocketId = userSockets.get(patientId);
-      if (!patientSocketId && patientWalletId) {
-        patientSocketId = userSockets.get(patientWalletId);
-      }
 
       console.log("📨 Looking up patient socket with ID:", patientId);
       console.log("📨 Patient socketId:", patientSocketId);
@@ -1300,24 +1226,22 @@ io.on("connection", (socket) => {
         if (mongoose.Types.ObjectId.isValid(providerId)) {
           rejectingProviderIdObj = new mongoose.Types.ObjectId(providerId);
         } else {
-          const user = await User.findOne({ walletID: providerId }).select(
-            "_id",
-          );
+          const user = null;
           rejectingProviderIdObj = user ? user._id : null;
         }
       }
-      // Fallback to socket.userId (usually walletID set on join)
+      // Fallback to socket.userId
       if (!rejectingProviderIdObj && socket.userId) {
-        const user = await User.findOne({ walletID: socket.userId }).select(
-          "_id",
-        );
+        const user = mongoose.Types.ObjectId.isValid(socket.userId)
+          ? await User.findById(socket.userId).select("_id")
+          : null;
         rejectingProviderIdObj = user ? user._id : null;
       }
 
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role walletID",
+        "fullname cellphoneNumber role",
       );
       await request.populate("ailmentCategoryId");
 
@@ -1358,17 +1282,17 @@ io.on("connection", (socket) => {
         const ailmentCategory = request.ailmentCategoryId;
 
         // Get all online provider user IDs by checking socket roles
-        const onlineProviderWalletIds = [];
+        const onlineProviderIds = [];
         for (const [userId, socketId] of userSockets.entries()) {
           const socket = io.sockets.sockets.get(socketId);
           if (socket && socket.role && providerRoles.includes(socket.role)) {
-            onlineProviderWalletIds.push(userId);
+            onlineProviderIds.push(userId);
           }
         }
 
-        // Convert walletIDs to full user objects to check specializations
+        // Convert online provider ids to full user objects to check specializations
         const onlineProviderUsers = await User.find({
-          walletID: { $in: onlineProviderWalletIds },
+          _id: { $in: onlineProviderIds },
         });
 
         // Filter providers by specialization match
@@ -1376,19 +1300,19 @@ io.on("connection", (socket) => {
           providerMatchesAilment(provider, ailmentCategory),
         );
 
-        const onlineProviderIds = matchingProviderUsers.map((user) => user._id);
+        const matchingProviderIds = matchingProviderUsers.map((user) => user._id);
 
         // Check which providers are busy
         const busyProviderIds =
-          onlineProviderIds.length > 0
+          matchingProviderIds.length > 0
             ? await ConsultationRequest.distinct("providerId", {
-                providerId: { $in: onlineProviderIds },
+                providerId: { $in: matchingProviderIds },
                 status: { $in: providerActiveStatuses },
               })
             : [];
 
         // Available providers = online providers who match specializations, are not busy, and have not rejected
-        const availableProviderIds = onlineProviderIds.filter(
+        const availableProviderIds = matchingProviderIds.filter(
           (id) =>
             !busyProviderIds.some(
               (busyId) => busyId && busyId.toString() === id.toString(),
@@ -1400,9 +1324,8 @@ io.on("connection", (socket) => {
 
         // If no providers are available, notify patient with friendly message
         if (availableProviderIds.length === 0) {
-          const patientWalletId =
-            request.patientId.walletID || request.patientId._id.toString();
-          const patientSocketId = userSockets.get(patientWalletId);
+          const patientIdKey = request.patientId._id.toString();
+          const patientSocketId = userSockets.get(patientIdKey);
           if (patientSocketId) {
             io.to(patientSocketId).emit("providerUnavailable", {
               requestId: request._id,
@@ -1471,13 +1394,10 @@ io.on("connection", (socket) => {
           )
             continue;
 
-          // Find provider by walletID (socketUserId) or _id
+          // Find provider by _id
           let provider = null;
           if (mongoose.Types.ObjectId.isValid(socketUserId)) {
             provider = await User.findById(socketUserId);
-          }
-          if (!provider) {
-            provider = await User.findOne({ walletID: socketUserId });
           }
 
           // Check if provider matches the ailment category's specializations
@@ -1514,9 +1434,8 @@ io.on("connection", (socket) => {
       }
 
       // Notify patient of the updated request (if not already sent above)
-      const patientWalletId =
-        request.patientId.walletID || request.patientId._id.toString();
-      const patientSocketId = userSockets.get(patientWalletId);
+      const patientIdKey = request.patientId._id.toString();
+      const patientSocketId = userSockets.get(patientIdKey);
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
       }
@@ -1613,7 +1532,7 @@ io.on("connection", (socket) => {
         if (mongoose.Types.ObjectId.isValid(patientIdentifier)) {
           validPatientId = new mongoose.Types.ObjectId(patientIdentifier);
         } else {
-          const patientUser = await User.findOne({ walletID: patientIdentifier });
+          const patientUser = null;
           validPatientId = patientUser ? patientUser._id : null;
         }
 
@@ -1664,7 +1583,7 @@ io.on("connection", (socket) => {
         if (mongoose.Types.ObjectId.isValid(providerIdentifier)) {
           validProviderId = new mongoose.Types.ObjectId(providerIdentifier);
         } else {
-          const user = await User.findOne({ walletID: providerIdentifier });
+          const user = null;
           if (user) {
             validProviderId = user._id;
           } else {
@@ -1744,40 +1663,11 @@ io.on("connection", (socket) => {
 
       request.status = status;
 
-      // Add notes if provided
-      if (notes) {
-        if (status === "in_progress") {
-          request.consultationDetails = {
-            ...request.consultationDetails,
-            notes,
-            startTime: new Date(),
-          };
-        } else if (status === "completed") {
-          request.consultationDetails = {
-            ...request.consultationDetails,
-            ...request.consultationDetails,
-            endTime: new Date(),
-          };
-        }
-      } else if (status === "in_progress") {
-        // Set start time even without notes
-        request.consultationDetails = {
-          ...request.consultationDetails,
-          startTime: new Date(),
-        };
-      } else if (status === "completed") {
-        // Set end time
-        request.consultationDetails = {
-          ...request.consultationDetails,
-          endTime: new Date(),
-        };
-      }
-
       await request.save();
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role walletID",
+        "fullname cellphoneNumber role",
       );
       await request.populate("ailmentCategoryId");
 
@@ -1787,146 +1677,12 @@ io.on("connection", (socket) => {
           provider.consultations = provider.consultations - 1;
 
                  await provider.save();
-        // try {
-        //   if (request.paymentMethod === "wallet") {
-        //     // Get ailment category to get initialCost and cost
-        //     const ailmentCategory = request.ailmentCategoryId;
-        //     if (!ailmentCategory) {
-        //       socket.emit("requestError", {
-        //         error:
-        //           "We're having trouble processing the payment. Please try again or contact support if the issue persists.",
-        //       });
-        //       return;
-        //     }
-
-        //     const initialCost = parseFloat(ailmentCategory.initialCost); // Full amount patient pays
-        //     const cost = parseFloat(ailmentCategory.cost); // Amount provider receives (initialCost - commission)
-
-        //     if (
-        //       !isNaN(initialCost) &&
-        //       initialCost > 0 &&
-        //       !isNaN(cost) &&
-        //       cost > 0
-        //     ) {
-        //       // Get patient and provider
-        //       const patient = await User.findById(request.patientId._id);
-        //       const provider = await User.findById(request.providerId._id);
-
-        //       if (patient && provider) {
-        //         const patientBalance = parseFloat(patient.balance || 0);
-
-        //         // Check patient has enough balance
-        //         if (patientBalance < initialCost) {
-        //           const shortfall = (initialCost - patientBalance).toFixed(2);
-        //           socket.emit("requestError", {
-        //             error: `Unable to complete payment. The patient's wallet balance (N$${patientBalance.toFixed(2)}) is insufficient for the consultation cost (N$${initialCost.toFixed(2)}). Please ask the patient to add N$${shortfall} to their wallet.`,
-        //           });
-        //           return;
-        //         }
-
-        //         // Update patient balance (deduct initialCost - the full amount)
-        //         const patientPreviousBalance = patient.balance;
-        //         patient.PreviousBalance = patientPreviousBalance;
-        //         patient.balance = patientBalance - initialCost;
-
-        //         // Update provider balance (add cost - the amount after commission)
-        //         const providerPreviousBalance = provider.balance;
-        //         provider.PreviousBalance = providerPreviousBalance;
-        //         provider.balance = parseFloat(provider.balance) + cost;
-
-        //         // Save both users
-        //         await patient.save();
-        //         await provider.save();
-
-        //         // Create transaction for patient (withdrawal of initialCost)
-        //         const patientTransaction = new Transaction({
-        //           userId: patient._id.toString(),
-        //           walletID: patient.walletID,
-        //           amount: initialCost,
-        //           time: new Date(),
-        //           referrence: `Consultation Request: ${request._id}`,
-        //           type: "withdrawal",
-        //           status: "completed",
-        //         });
-        //         await patientTransaction.save();
-
-        //         // Create transaction for provider (earning of cost, not initialCost)
-        //         const providerTransaction = new Transaction({
-        //           userId: provider._id.toString(),
-        //           walletID: provider.walletID,
-        //           amount: cost,
-        //           time: new Date(),
-        //           referrence: `Consultation Request: ${request._id}`,
-        //           type: "earning",
-        //           status: "completed",
-        //         });
-        //         await providerTransaction.save();
-
-        //         // Update request payment status
-        //         request.paymentStatus = "paid";
-        //         await request.save();
-        //       }
-        //     }
-        //   } else if (
-        //     request.paymentMethod === "cash" &&
-        //     request.ailmentCategoryId
-        //   ) {
-        //     // For cash payments, deduct commission from provider's wallet
-        //     const commission = parseFloat(request.ailmentCategoryId.commission);
-        //     const provider = await User.findById(request.providerId._id);
-
-        //     if (provider && !isNaN(commission) && commission > 0) {
-        //       const providerBalance = parseFloat(provider.balance || 0);
-
-        //       // Check balance again (in case it changed since acceptance)
-        //       if (providerBalance < commission) {
-        //         const shortfall = (commission - providerBalance).toFixed(2);
-        //         socket.emit("requestError", {
-        //           error: `Unable to complete the consultation. Your wallet balance (N$${providerBalance.toFixed(2)}) is insufficient to cover the commission fee (N$${commission.toFixed(2)}). Please add N$${shortfall} to your wallet to complete this consultation.`,
-        //         });
-        //         return;
-        //       }
-
-        //       // Deduct commission from provider's wallet
-        //       const providerPreviousBalance = provider.balance;
-        //       provider.PreviousBalance = providerPreviousBalance;
-        //       provider.balance = providerBalance - commission;
-        //       await provider.save();
-
-        //       // Create transaction record for commission deduction
-        //       const commissionTransaction = new Transaction({
-        //         userId: provider._id.toString(),
-        //         walletID: provider.walletID,
-        //         amount: commission,
-        //         time: new Date(),
-        //         referrence: `Commission for Consultation Request: ${request._id}`,
-        //         type: "transfer",
-        //         status: "completed",
-        //       });
-        //       await commissionTransaction.save();
-
-        //       // Update request payment status
-        //       request.paymentStatus = "paid";
-        //       await request.save();
-        //     }
-        //   }
-        // } catch (paymentError) {
-        //   console.error("Payment processing error:", paymentError);
-        //   // Don't fail the request completion, but log the error
-        //   socket.emit("requestError", {
-        //     error: "Payment processing failed. Please contact support.",
-        //   });
-        // }
       }
 
-      // Notify patient using walletID or _id
-      const patientWalletId = request.patientId.walletID;
+      // Notify patient using _id
       const patientId = request.patientId._id.toString();
 
       let patientSocketId = userSockets.get(patientId);
-      if (!patientSocketId && patientWalletId) {
-        patientSocketId = userSockets.get(patientWalletId);
-      }
 
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
@@ -2001,15 +1757,11 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Notify provider using walletID or _id
+      // Notify provider using _id
       if (request.providerId) {
-        const providerWalletId = request.providerId.walletID;
         const providerId = request.providerId._id.toString();
 
         let providerSocketId = userSockets.get(providerId);
-        if (!providerSocketId && providerWalletId) {
-          providerSocketId = userSockets.get(providerWalletId);
-        }
 
         if (providerSocketId) {
           io.to(providerSocketId).emit("requestUpdated", request);
@@ -2042,22 +1794,14 @@ io.on("connection", (socket) => {
 
       // Validate cancellation - provider can only cancel before arrival
       if (cancelledBy === "provider") {
-        const providerWalletId = socket.userId;
-        let validProviderId = providerWalletId;
-        if (!mongoose.Types.ObjectId.isValid(providerWalletId)) {
-          const user = await User.findOne({ walletID: providerWalletId });
-          if (user) {
-            validProviderId = user._id;
-          } else {
-            socket.emit("requestError", {
-              error:
-                "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
-            });
-            return;
-          }
-        } else {
-          validProviderId = new mongoose.Types.ObjectId(providerWalletId);
+        if (!mongoose.Types.ObjectId.isValid(socket.userId)) {
+          socket.emit("requestError", {
+            error:
+              "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
+          });
+          return;
         }
+        const validProviderId = new mongoose.Types.ObjectId(socket.userId);
 
         // Check if this provider is assigned to this request
         if (
@@ -2088,21 +1832,17 @@ io.on("connection", (socket) => {
       };
 
       await request.save();
-      await request.populate("patientId", "fullname cellphoneNumber walletID");
+      await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role walletID",
+        "fullname cellphoneNumber role",
       );
       await request.populate("ailmentCategoryId");
 
-      // Notify patient using walletID or _id
-      const patientWalletId = request.patientId.walletID;
+      // Notify patient using _id
       const patientId = request.patientId._id.toString();
 
       let patientSocketId = userSockets.get(patientId);
-      if (!patientSocketId && patientWalletId) {
-        patientSocketId = userSockets.get(patientWalletId);
-      }
 
       if (patientSocketId) {
         io.to(patientSocketId).emit("requestUpdated", request);
@@ -2110,13 +1850,9 @@ io.on("connection", (socket) => {
 
       // Notify provider if assigned
       if (request.providerId) {
-        const providerWalletId = request.providerId.walletID;
         const providerId = request.providerId._id.toString();
 
         let providerSocketId = userSockets.get(providerId);
-        if (!providerSocketId && providerWalletId) {
-          providerSocketId = userSockets.get(providerWalletId);
-        }
 
         if (providerSocketId) {
           io.to(providerSocketId).emit("requestUpdated", request);
@@ -2278,7 +2014,7 @@ schedule.scheduleJob("*/30 * * * *", async () => {
         }
 
         console.log(
-          `Qualification expired for user: ${provider.fullname} (${provider.walletID})`,
+          `Qualification expired for user: ${provider.fullname} (${provider._id})`,
         );
       }
     }
@@ -2369,11 +2105,11 @@ schedule.scheduleJob("0 9 * * *", async () => {
 
         notifiedCount++;
         console.log(
-          `Notification sent to user: ${provider.fullname} (${provider.walletID}) - Expiry: ${provider.hpcnaExpiryDate.toDateString()}`,
+          `Notification sent to user: ${provider.fullname} (${provider._id}) - Expiry: ${provider.hpcnaExpiryDate.toDateString()}`,
         );
       } else {
         console.log(
-          `Skipped user: ${provider.fullname} (${provider.walletID}) - Already notified recently`,
+          `Skipped user: ${provider.fullname} (${provider._id}) - Already notified recently`,
         );
       }
     }

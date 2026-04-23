@@ -38,11 +38,6 @@ const consultationRequestSchema = new mongoose.Schema(
       ],
       default: "searching",
     },
-    urgency: {
-      type: String,
-      enum: ["low", "medium", "high", "emergency"],
-      default: "medium",
-    },
     // Patient location details
     address: {
       route: { type: String, required: true }, // street
@@ -78,28 +73,14 @@ const consultationRequestSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
-    estimatedCost: {
-      type: String,
-      required: true,
-    },
-    finalCost: {
+    consultationCost: {
       type: Number,
-      required: false,
+      required: true,
     },
     // Provider response details
     providerResponse: {
       responseTime: { type: Date },
       estimatedArrival: { type: String }, // "15 minutes", "30 minutes", etc.
-    },
-    // Consultation details
-    consultationDetails: {
-      startTime: { type: Date },
-      endTime: { type: Date },
-      notes: { type: String },
-      diagnosis: { type: String },
-      prescription: { type: String },
-      followUpInstructions: { type: String },
-      followUpDate: { type: Date },
     },
     consultationMode: {
       type: String,

@@ -11,10 +11,6 @@ const transactionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    walletID: {
-    type: String,
-    required: true,
-  },
     time: {
       type: Date,
       required: true,

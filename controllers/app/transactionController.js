@@ -27,7 +27,6 @@ exports.purchasePackage = async (req, res) => {
     await Transaction.create({
       userId: id,
       amount: myPackage.amount,
-      walletID: user.walletID,
       time: new Date(),
       referrence,
       type: "purchase",
@@ -50,13 +49,13 @@ exports.purchasePackage = async (req, res) => {
 
 exports.fundSomeonesWallet = async (req, res) => {
   const id = req.user.id;
-  const { amount, cardNumber, expiryDate, cvv, walletID, cardHolder } = req.body;
+  const { amount, cardNumber, expiryDate, cvv, recipientUserId, cardHolder } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
   }
-  if (!walletID) {
-    return res.status(400).json({ message: "Wallet id is required" });
+  if (!recipientUserId) {
+    return res.status(400).json({ message: "Recipient user id is required" });
   }
   if (!amount) {
     return res.status(400).json({ message: "Amount is required" });
@@ -80,14 +79,7 @@ exports.fundSomeonesWallet = async (req, res) => {
       return res.status(404).json({ message: "It seems you don’t have an account yet. Please register to get started." });
     }
 
-    const doesWalletExist = await User.findOne({
-        walletID
-    });
-    if (!doesWalletExist) {
-      return res.status(404).json({ message: "Wallet ID not found." });
-    }
-
-    const userFunded = await User.findOne({ walletID });
+    const userFunded = await User.findOne({ _id: recipientUserId });
     if (!userFunded) {
       return res.status(404).json({ message: "User being funded not found." });
     }
@@ -96,16 +88,11 @@ exports.fundSomeonesWallet = async (req, res) => {
     await Transaction.create({
       userId: id,
       amount: amount,
-      walletID,
       time: new Date(),
       referrence,
       type: "deposit",
       status: "completed",
     });
-    
-    userFunded.PreviousBalance = userFunded.balance;
-    userFunded.balance = userFunded.balance + parseFloat(amount);
-    await userFunded.save();
 
     const data = await Transaction.find({userId: id});
     return res.status(201).json({
@@ -118,13 +105,13 @@ exports.fundSomeonesWallet = async (req, res) => {
 
 exports.wallet2Wallet = async (req, res) => {
   const id = req.user.id;
-  const { amount, walletID } = req.body;
+  const { amount, recipientUserId } = req.body;
 
   if (!id) {
     return res.status(400).json({ message: "User id is required" });
   }
-  if (!walletID) {
-    return res.status(400).json({ message: "Wallet id is required" });
+  if (!recipientUserId) {
+    return res.status(400).json({ message: "Recipient user id is required" });
   }
   if (!amount) {
     return res.status(400).json({ message: "Amount is required" });
@@ -136,40 +123,20 @@ exports.wallet2Wallet = async (req, res) => {
       return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
     
-    const userFunded = await User.findOne({ walletID });
+    const userFunded = await User.findOne({ _id: recipientUserId });
     if (!userFunded) {
       return res.status(404).json({ message: "User being funded not found." });
-    }
-
-    if (user.balance <= 0) {
-      return res.status(400).json({ message: "There are no funds to transfer." });
-    }
-
-    if (user.balance < amount) {
-      return res.status(400).json({
-        message:
-          "Current balance can't withstand a withdrawal amount exceeding balance.",
-      });
     }
 
     const referrence = generateTransactionReference();
     await Transaction.create({
       userId: id,
       amount: amount,
-      walletID,
       time: new Date(),
       referrence,
       type: "transfer",
       status: "completed",
     });
-
-    user.PreviousBalance = user.balance;
-    user.balance = user.balance - parseFloat(amount);
-    await user.save();
-
-    userFunded.PreviousBalance = userFunded.balance;
-    userFunded.balance = userFunded.balance + parseFloat(amount);
-    await userFunded.save();
 
     const userUpdated = await User.findOne({ _id: id });
     return res.status(201).json({
@@ -197,31 +164,15 @@ exports.withdrawal = async (req, res) => {
       return res.status(404).json({ message: "We couldn’t find an account with the provided details." });
     }
 
-    if (user.balance <= 0) {
-      return res.status(400).json({ message: "There are no funds to withdraw." });
-    }
-
-    if (user.balance < amount) {
-      return res.status(400).json({
-        message:
-          "Current balance can't withstand a withdrawal amount exceeding balance.",
-      });
-    }
-
     const referrence = generateTransactionReference();
     await Transaction.create({
       userId: id,
       amount: amount,
-      walletID: user.walletID,
       time: new Date(),
       referrence,
       type: "withdrawal",
       status: "completed",
     });
-
-    user.PreviousBalance = user.balance;
-    user.balance = user.balance - parseFloat(amount);
-    await user.save();
 
     const userUpdated = await User.findOne({ _id: id });
     return res.status(201).json({
@@ -287,7 +238,7 @@ exports.all = async (req, res) => {
 
 exports.getAllTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find().populate('userId', 'fullname email walletID').sort({ time: -1 });
+    const transactions = await Transaction.find().populate('userId', 'fullname email').sort({ time: -1 });
     res.status(200).json({ status: true, transactions });
   } catch (error) {
     console.error("Error fetching all transactions:", error);

@@ -68,11 +68,11 @@ exports.getRequestStats = async (req, res) => {
 
     // Get recent requests (last 10)
     const recentRequests = await ConsultationRequest.find()
-      .populate("patientId", "fullname cellphoneNumber walletID")
-      .populate("providerId", "fullname cellphoneNumber role walletID")
+      .populate("patientId", "fullname cellphoneNumber")
+      .populate("providerId", "fullname cellphoneNumber role")
       .sort({ createdAt: -1 })
       .limit(10)
-      .select("status urgency createdAt patientId providerId address locationTracking");
+      .select("status createdAt patientId providerId address locationTracking");
 
     res.status(200).json({
       status: true,

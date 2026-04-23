@@ -10,25 +10,16 @@ const ailmentCategorySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    initialCost: {
+    teleconsultationCost: {
       type: Number,
-      required: true,
+      required: false,
+      default: null,
     },
-    cost: {
+    physicalconsultationCost: {
       type: Number,
-      required: true,
+      required: false,
+      default: null,
     },
-    commission: {
-      type: Number,
-      required: true,
-      default: 0.00,
-    },
-     priority:{
-    type: Number,
-    enum: [1, 2, 3],
-    default: 2,
-    required: true,
-  },
     specialization: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "specialization",

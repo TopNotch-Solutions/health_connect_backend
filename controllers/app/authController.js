@@ -5,7 +5,6 @@ const path = require("path");
 const {
   isValidCellphoneNumber,
 } = require("../../utils/cellphoneNumberValidation");
-const walletIDGenerator = require("../../utils/walletGenerator");
 const { validatePassword } = require("../../utils/validatePassword");
 const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
@@ -108,34 +107,6 @@ exports.registerPatient = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    let walletId;
-    let isWalletIdUnique = false;
-    let attempts = 0;
-    const maxAttempts = 20;
-
-    while (!isWalletIdUnique && attempts < maxAttempts) {
-      walletId = walletIDGenerator();
-      if (!walletId) {
-        return res.status(500).json({
-          message:
-            "We're having trouble processing your request. Please try again shortly.",
-        });
-      }
-
-      const checkWalletID = await User.findOne({ walletID: walletId });
-      if (!checkWalletID) {
-        isWalletIdUnique = true;
-      }
-      attempts++;
-    }
-
-    if (!isWalletIdUnique) {
-      return res.status(500).json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-      });
-    }
-
     const newUser = await User.create({
       fullname,
       cellphoneNumber,
@@ -143,7 +114,6 @@ exports.registerPatient = async (req, res) => {
       password: hashedPassword,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       gender,
-      walletID: walletId,
       nationalId,
       address,
       role: "patient",
@@ -361,31 +331,6 @@ exports.registerHealthProvider = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let walletId;
-    let isWalletIdUnique = false;
-    let attempts = 0;
-    const maxAttempts = 20;
-    while (!isWalletIdUnique && attempts < maxAttempts) {
-      walletId = walletIDGenerator();
-      if (!walletId) {
-        return res.status(500).json({
-          message:
-            "We're having trouble processing your request. Please try again shortly.",
-        });
-      }
-
-      const checkWalletID = await User.findOne({ walletID: walletId });
-      if (!checkWalletID) {
-        isWalletIdUnique = true;
-      }
-      attempts++;
-    }
-    if (!isWalletIdUnique) {
-      return res.status(500).json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-      });
-    }
     const newRole = role.toLowerCase();
 
     const newUser = await User.create({
@@ -393,7 +338,6 @@ exports.registerHealthProvider = async (req, res) => {
       cellphoneNumber,
       email,
       password: hashedPassword,
-      walletID: walletId,
       address,
       gender,
       bio,
@@ -751,13 +695,11 @@ exports.login = async (req, res) => {
               email: user.email,
               role: user.role,
               cellphoneNumber: user.cellphoneNumber,
-              walletID: user.walletID,
               userId: user._id,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
-              balance: user.balance,
               profileImage: user.profileImage,
               address: user.address,
               region: user.region,
@@ -770,9 +712,7 @@ exports.login = async (req, res) => {
               email: user.email,
               role: user.role,
               cellphoneNumber: user.cellphoneNumber,
-              walletID: user.walletID,
               userId: user._id,
-              balance: user.balance,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
@@ -829,13 +769,11 @@ exports.userDetails = async (req, res) => {
               email: user.email,
               role: user.role,
               cellphoneNumber: user.cellphoneNumber,
-              walletID: user.walletID,
               userId: user._id,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
-              balance: user.balance,
               profileImage: user.profileImage,
               address: user.address,
               region: user.region,
@@ -848,8 +786,6 @@ exports.userDetails = async (req, res) => {
               email: user.email,
               role: user.role,
               cellphoneNumber: user.cellphoneNumber,
-              walletID: user.walletID,
-              balance: user.balance,
               userId: user._id,
               gender: user.gender,
               isPushNotificationEnabled: user.isPushNotificationEnabled,

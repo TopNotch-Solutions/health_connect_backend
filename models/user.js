@@ -8,11 +8,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  walletID: {
-    type: String,
-    required: true,
-    unique: true,
-  },
   email:{
     type: String,
     required: false,
@@ -48,16 +43,6 @@ const userSchema = new mongoose.Schema({
   yearsOfExperience: {
     type: String,
     required: false,
-  },
-  balance: {
-    type: Number,
-    required: true,
-    default: 0.00,
-  },
-  PreviousBalance: {
-    type: Number,
-    required: true,
-    default: 0.00,
   },
   address: {
     type: String,
