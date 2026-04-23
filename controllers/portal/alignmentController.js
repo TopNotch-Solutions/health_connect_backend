@@ -64,6 +64,15 @@ exports.create = async (req, res) => {
           "Physical consultation cost must be a valid number greater or equal to 0.",
       });
     }
+    if (
+      parsedPhysicalconsultationCost === undefined ||
+      parsedPhysicalconsultationCost === null ||
+      parsedPhysicalconsultationCost <= 0
+    ) {
+      return res.status(400).json({
+        message: "Physical consultation cost is required and must be greater than 0.",
+      });
+    }
     if (!specialization) {
       return res
         .status(400)
@@ -134,9 +143,7 @@ exports.create = async (req, res) => {
                 ? null
                 : parsedTeleconsultationCost,
             physicalconsultationCost:
-              parsedPhysicalconsultationCost === undefined
-                ? null
-                : parsedPhysicalconsultationCost,
+              parsedPhysicalconsultationCost,
             specialization: specializationArray,
             provider,
             supportsTeleconsultation: parseBooleanish(
@@ -224,6 +231,15 @@ exports.updateAilment = async (req, res) => {
       return res.status(400).json({
         message:
           "Physical consultation cost must be a valid number greater or equal to 0.",
+      });
+    }
+    if (
+      parsedPhysicalconsultationCost !== undefined &&
+      (parsedPhysicalconsultationCost === null ||
+        parsedPhysicalconsultationCost <= 0)
+    ) {
+      return res.status(400).json({
+        message: "Physical consultation cost must be greater than 0.",
       });
     }
     // Normalize specialization if provided

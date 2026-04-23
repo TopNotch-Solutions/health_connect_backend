@@ -14,11 +14,12 @@ const ailmentCategorySchema = new mongoose.Schema(
       type: Number,
       required: false,
       default: null,
+      min: 0,
     },
     physicalconsultationCost: {
       type: Number,
-      required: false,
-      default: null,
+      required: true,
+      min: 0.01,
     },
     specialization: {
       type: [mongoose.Schema.Types.ObjectId],
