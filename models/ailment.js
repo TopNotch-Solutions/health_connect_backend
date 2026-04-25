@@ -28,7 +28,7 @@ const ailmentCategorySchema = new mongoose.Schema(
     },
     provider: {
       type: String,
-      enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker"],
+      enum: ["Doctor", "Nurse", "Physiotherapist", "Social Worker", "Pharmacist"],
       required: false,
     },
     supportsTeleconsultation: {

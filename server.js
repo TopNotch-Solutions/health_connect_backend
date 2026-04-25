@@ -88,7 +88,8 @@ const onlineUsers = {
   doctor: new Set(),
   nurse: new Set(),
   physiotherapist: new Set(),
-  "social worker:": new Set(),
+  "social worker": new Set(),
+  pharmacist: new Set(),
 };
 
 // Store socket IDs by user role and userId for targeted messaging
@@ -118,6 +119,7 @@ io.on("connection", (socket) => {
         nurse: "Nurse",
         physiotherapist: "Physiotherapist",
         "social worker": "Social Worker",
+        pharmacist: "Pharmacist",
       };
       const expectedProviderType = roleMapping[provider.role?.toLowerCase()];
       if (
@@ -176,6 +178,24 @@ io.on("connection", (socket) => {
     return hasMatchingSpecialization;
   };
 
+  const PROVIDER_ROLES = [
+    "doctor",
+    "nurse",
+    "physiotherapist",
+    "social worker",
+    "pharmacist",
+  ];
+  const PROVIDER_ACTIVE_STATUSES = [
+    "accepted",
+    "payment_pending",
+    "paid",
+    "provider_confirmation_pending",
+    "ready_for_call",
+    "in_call",
+    "en_route",
+    "arrived",
+    "in_progress",
+  ];
   const SEARCH_RADIUS_MAX_KM = 8;
   const SEARCH_RADIUS_STEP_MINUTES = 1;
   const SEARCH_EXPIRE_HOURS = 6;
@@ -255,6 +275,72 @@ io.on("connection", (socket) => {
     return Math.min(SEARCH_RADIUS_MAX_KM, steppedRadius);
   };
 
+  const normalizeCoordinates = (coordinates) => {
+    if (!coordinates) return null;
+
+    const latitude =
+      typeof coordinates.latitude === "string"
+        ? Number(coordinates.latitude)
+        : coordinates.latitude;
+    const longitude =
+      typeof coordinates.longitude === "string"
+        ? Number(coordinates.longitude)
+        : coordinates.longitude;
+
+    if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+      return null;
+    }
+
+    return { latitude, longitude };
+  };
+
+  const providerCanSeeRequest = (provider, request, providerCoordinates) => {
+    const ailmentCategory = request?.ailmentCategoryId;
+    if (!providerMatchesAilment(provider, ailmentCategory)) {
+      return {
+        allowed: false,
+        reason: "provider_role_or_specialization_mismatch",
+      };
+    }
+
+    const normalizedProviderCoordinates =
+      normalizeCoordinates(providerCoordinates);
+    if (!normalizedProviderCoordinates) {
+      return { allowed: false, reason: "provider_location_missing" };
+    }
+
+    const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
+    if (!allowedRadiusKm) {
+      return { allowed: false, reason: "request_search_window_expired" };
+    }
+
+    const patientCoordinates = getPatientCoordinatesFromRequest(request);
+    if (
+      !patientCoordinates ||
+      !isValidLatitude(patientCoordinates.latitude) ||
+      !isValidLongitude(patientCoordinates.longitude)
+    ) {
+      return { allowed: false, reason: "patient_location_missing" };
+    }
+
+    const distanceInKm = getDistanceInKm(
+      normalizedProviderCoordinates.latitude,
+      normalizedProviderCoordinates.longitude,
+      patientCoordinates.latitude,
+      patientCoordinates.longitude,
+    );
+
+    return {
+      allowed: distanceInKm <= allowedRadiusKm,
+      reason:
+        distanceInKm <= allowedRadiusKm
+          ? "allowed"
+          : "provider_outside_search_radius",
+      distanceInKm,
+      allowedRadiusKm,
+    };
+  };
+
   socket.on("join", (data) => {
     const { role, userId } = data;
 
@@ -281,7 +367,8 @@ io.on("connection", (socket) => {
           doctor: onlineUsers.doctor.size,
           nurse: onlineUsers.nurse.size,
           physiotherapist: onlineUsers.physiotherapist.size,
-          "social worker:": onlineUsers["social worker:"].size,
+          "social worker": onlineUsers["social worker"].size,
+          pharmacist: onlineUsers.pharmacist.size,
         },
         total: totalOnline,
       });
@@ -411,7 +498,13 @@ io.on("connection", (socket) => {
         "patientId",
         "fullname cellphoneNumber profileImage",
       );
-      await request.populate("ailmentCategoryId");
+      await request.populate({
+        path: "ailmentCategoryId",
+        populate: {
+          path: "specialization",
+          select: "title",
+        },
+      });
 
       // Notify patient using their user id
       const patientSocketId = userSockets.get(patientId);
@@ -421,17 +514,6 @@ io.on("connection", (socket) => {
 
       // Notify all providers about new available request
       // Only notify providers that are not currently busy and match the ailment specialization
-      const providerActiveStatuses = [
-        "accepted",
-        "payment_pending",
-        "paid",
-        "provider_confirmation_pending",
-        "ready_for_call",
-        "in_call",
-        "en_route",
-        "arrived",
-        "in_progress",
-      ];
       const populatedAilmentCategory = request.ailmentCategoryId;
 
       for (const [socketUserId, socketId] of userSockets.entries()) {
@@ -452,9 +534,21 @@ io.on("connection", (socket) => {
           provider = null;
         }
 
-        // Check if provider matches the ailment category's specializations
-        if (!providerMatchesAilment(provider, populatedAilmentCategory)) {
-          continue; // Skip this provider if they don't match the specialization
+        const visibilityCheck = providerCanSeeRequest(
+          provider,
+          request,
+          targetSocket.providerLocation,
+        );
+        if (!visibilityCheck.allowed) {
+          console.log("Skipping realtime request push:", {
+            providerId: socketUserId,
+            requestId: request._id,
+            reason: visibilityCheck.reason,
+            distanceInKm: visibilityCheck.distanceInKm,
+            allowedRadiusKm: visibilityCheck.allowedRadiusKm,
+            ailmentProvider: populatedAilmentCategory?.provider,
+          });
+          continue;
         }
 
         let providerObjectId = provider ? provider._id : null;
@@ -464,7 +558,7 @@ io.on("connection", (socket) => {
         if (providerObjectId) {
           const activeForProvider = await ConsultationRequest.findOne({
             providerId: providerObjectId,
-            status: { $in: providerActiveStatuses },
+            status: { $in: PROVIDER_ACTIVE_STATUSES },
           }).select("_id");
           isBusy = Boolean(activeForProvider);
         }
@@ -559,6 +653,7 @@ io.on("connection", (socket) => {
         });
         return;
       }
+      socket.providerLocation = parsedProviderCoordinates;
 
       // Get provider details to check specializations
       // Try to get providerId from data first, then fallback to socket.userId
@@ -601,21 +696,10 @@ io.on("connection", (socket) => {
       console.log("🔍 Converted providerId to:", validProviderId);
 
       // Busy if any active consultation
-      const providerActiveStatuses = [
-        "accepted",
-        "payment_pending",
-        "paid",
-        "provider_confirmation_pending",
-        "ready_for_call",
-        "in_call",
-        "en_route",
-        "arrived",
-        "in_progress",
-      ];
       if (validProviderId) {
         const activeForProvider = await ConsultationRequest.findOne({
           providerId: validProviderId,
-          status: { $in: providerActiveStatuses },
+          status: { $in: PROVIDER_ACTIVE_STATUSES },
         }).select("_id");
         if (activeForProvider) {
           console.log(
@@ -648,33 +732,11 @@ io.on("connection", (socket) => {
 
       // Always filter requests based on provider specialization and dynamic distance window
       const filteredRequests = requests.filter((request) => {
-        const ailmentCategory = request.ailmentCategoryId;
-        if (!providerMatchesAilment(provider, ailmentCategory)) {
-          return false;
-        }
-
-        const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
-        if (!allowedRadiusKm) {
-          return false;
-        }
-
-        const patientCoordinates = getPatientCoordinatesFromRequest(request);
-        if (
-          !patientCoordinates ||
-          !isValidLatitude(patientCoordinates.latitude) ||
-          !isValidLongitude(patientCoordinates.longitude)
-        ) {
-          return false;
-        }
-
-        const distanceInKm = getDistanceInKm(
-          parsedProviderCoordinates.latitude,
-          parsedProviderCoordinates.longitude,
-          patientCoordinates.latitude,
-          patientCoordinates.longitude,
-        );
-
-        return distanceInKm <= allowedRadiusKm;
+        return providerCanSeeRequest(
+          provider,
+          request,
+          parsedProviderCoordinates,
+        ).allowed;
       });
       console.log(
         `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and dynamic radius (1km/${SEARCH_RADIUS_STEP_MINUTES}min up to ${SEARCH_RADIUS_MAX_KM}km)`,
@@ -773,7 +835,13 @@ io.on("connection", (socket) => {
         "providerId",
         "fullname cellphoneNumber role",
       );
-      await request.populate("ailmentCategoryId");
+      await request.populate({
+        path: "ailmentCategoryId",
+        populate: {
+          path: "specialization",
+          select: "title",
+        },
+      });
 
       // Notify patient
       const patientIdKey = request.patientId._id.toString();
@@ -985,7 +1053,7 @@ io.on("connection", (socket) => {
         requestId: data.requestId,
         providerId: data.providerId,
       });
-      const { requestId, providerId } = data;
+      const { requestId, providerId, providerLocation } = data;
 
       console.log("🔍 Looking up request with ID:", requestId);
       const request = await ConsultationRequest.findById(requestId);
@@ -1044,6 +1112,42 @@ io.on("connection", (socket) => {
           });
           return;
         }
+      }
+
+      const acceptProviderCoordinates =
+        normalizeCoordinates(providerLocation) ||
+        normalizeCoordinates(socket.providerLocation);
+      if (!acceptProviderCoordinates) {
+        socket.emit("requestError", {
+          error:
+            "Your current location is required before accepting this consultation. Please refresh nearby requests and try again.",
+        });
+        return;
+      }
+      socket.providerLocation = acceptProviderCoordinates;
+
+      await request.populate({
+        path: "ailmentCategoryId",
+        populate: {
+          path: "specialization",
+          select: "title",
+        },
+      });
+
+      const visibilityCheck = providerCanSeeRequest(
+        provider,
+        request,
+        acceptProviderCoordinates,
+      );
+      if (!visibilityCheck.allowed) {
+        socket.emit("requestError", {
+          error:
+            visibilityCheck.reason ===
+            "provider_role_or_specialization_mismatch"
+              ? "This consultation is not available for your provider type or specialization."
+              : "This consultation is no longer available in your current nearby search radius. Please refresh available requests.",
+        });
+        return;
       }
 
       
@@ -1243,7 +1347,13 @@ io.on("connection", (socket) => {
         "providerId",
         "fullname cellphoneNumber role",
       );
-      await request.populate("ailmentCategoryId");
+      await request.populate({
+        path: "ailmentCategoryId",
+        populate: {
+          path: "specialization",
+          select: "title",
+        },
+      });
 
       // Behavior depends on current status
       // 1) 'searching': keep the request available to others, but hide it for this provider
@@ -1262,30 +1372,13 @@ io.on("connection", (socket) => {
         }
 
         // Check if there are any available providers (not busy and matching specializations)
-        const providerRoles = [
-          "doctor",
-          "nurse",
-          "physiotherapist",
-          "social worker:",
-        ];
-        const providerActiveStatuses = [
-          "accepted",
-          "payment_pending",
-          "paid",
-          "provider_confirmation_pending",
-          "ready_for_call",
-          "in_call",
-          "en_route",
-          "arrived",
-          "in_progress",
-        ];
         const ailmentCategory = request.ailmentCategoryId;
 
         // Get all online provider user IDs by checking socket roles
         const onlineProviderIds = [];
         for (const [userId, socketId] of userSockets.entries()) {
           const socket = io.sockets.sockets.get(socketId);
-          if (socket && socket.role && providerRoles.includes(socket.role)) {
+          if (socket && socket.role && PROVIDER_ROLES.includes(socket.role)) {
             onlineProviderIds.push(userId);
           }
         }
@@ -1307,19 +1400,36 @@ io.on("connection", (socket) => {
           matchingProviderIds.length > 0
             ? await ConsultationRequest.distinct("providerId", {
                 providerId: { $in: matchingProviderIds },
-                status: { $in: providerActiveStatuses },
+                status: { $in: PROVIDER_ACTIVE_STATUSES },
               })
             : [];
 
         // Available providers = online providers who match specializations, are not busy, and have not rejected
         const availableProviderIds = matchingProviderIds.filter(
-          (id) =>
-            !busyProviderIds.some(
+          (id) => {
+            const providerSocketId = userSockets.get(id.toString());
+            const providerSocket = providerSocketId
+              ? io.sockets.sockets.get(providerSocketId)
+              : null;
+            const providerUser = matchingProviderUsers.find(
+              (user) => user._id.toString() === id.toString(),
+            );
+            const visibilityCheck = providerCanSeeRequest(
+              providerUser,
+              request,
+              providerSocket?.providerLocation,
+            );
+
+            return (
+              visibilityCheck.allowed &&
+              !busyProviderIds.some(
               (busyId) => busyId && busyId.toString() === id.toString(),
-            ) &&
-            !request.rejectedBy.some(
+              ) &&
+              !request.rejectedBy.some(
               (rid) => rid && rid.toString() === id.toString(),
-            ),
+              )
+            );
+          },
         );
 
         // If no providers are available, notify patient with friendly message
@@ -1366,18 +1476,6 @@ io.on("connection", (socket) => {
 
         // Notify others there's an available request again, but only to providers matching specializations
         const ailmentCategory = request.ailmentCategoryId;
-        const providerActiveStatuses = [
-          "accepted",
-          "payment_pending",
-          "paid",
-          "provider_confirmation_pending",
-          "ready_for_call",
-          "in_call",
-          "en_route",
-          "arrived",
-          "in_progress",
-        ];
-
         for (const [socketUserId, socketId] of userSockets.entries()) {
           const targetSocket = io.sockets.sockets.get(socketId);
           if (
@@ -1401,8 +1499,8 @@ io.on("connection", (socket) => {
           }
 
           // Check if provider matches the ailment category's specializations
-          if (!providerMatchesAilment(provider, ailmentCategory)) {
-            continue; // Skip this provider if they don't match the specialization
+          if (!providerCanSeeRequest(provider, request, targetSocket.providerLocation).allowed) {
+            continue;
           }
 
           // Check if provider is busy
@@ -1411,7 +1509,7 @@ io.on("connection", (socket) => {
           if (providerObjectId) {
             const activeForProvider = await ConsultationRequest.findOne({
               providerId: providerObjectId,
-              status: { $in: providerActiveStatuses },
+              status: { $in: PROVIDER_ACTIVE_STATUSES },
             }).select("_id");
             isBusy = Boolean(activeForProvider);
           }
@@ -1943,7 +2041,8 @@ io.on("connection", (socket) => {
           doctor: onlineUsers.doctor.size,
           nurse: onlineUsers.nurse.size,
           physiotherapist: onlineUsers.physiotherapist.size,
-          "social worker:": onlineUsers["social worker:"].size,
+          "social worker": onlineUsers["social worker"].size,
+          pharmacist: onlineUsers.pharmacist.size,
         },
         total: totalOnline,
       });
