@@ -8,6 +8,7 @@ exports.all = async (req, res) => {
     "nurse",
     "physiotherapist",
     "social worker",
+    "pharmacist",
   ];
 
   try {

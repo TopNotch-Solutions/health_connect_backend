@@ -732,11 +732,30 @@ io.on("connection", (socket) => {
 
       // Always filter requests based on provider specialization and dynamic distance window
       const filteredRequests = requests.filter((request) => {
-        return providerCanSeeRequest(
+        const visibilityCheck = providerCanSeeRequest(
           provider,
           request,
           parsedProviderCoordinates,
-        ).allowed;
+        );
+        if (!visibilityCheck.allowed) {
+          const ailmentCategory = request.ailmentCategoryId;
+          console.log("🚫 Request hidden from provider:", {
+            requestId: request._id?.toString(),
+            providerId: validProviderId?.toString(),
+            providerRole: provider?.role,
+            providerSpecializations: provider?.specializations,
+            ailmentProvider: ailmentCategory?.provider,
+            ailmentSpecializations: ailmentCategory?.specialization?.map(
+              (specialization) => specialization?.title || specialization,
+            ),
+            reason: visibilityCheck.reason,
+            distanceInKm: visibilityCheck.distanceInKm,
+            allowedRadiusKm: visibilityCheck.allowedRadiusKm,
+            providerCoordinates: parsedProviderCoordinates,
+            patientCoordinates: getPatientCoordinatesFromRequest(request),
+          });
+        }
+        return visibilityCheck.allowed;
       });
       console.log(
         `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and dynamic radius (1km/${SEARCH_RADIUS_STEP_MINUTES}min up to ${SEARCH_RADIUS_MAX_KM}km)`,

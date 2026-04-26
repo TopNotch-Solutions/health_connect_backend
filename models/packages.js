@@ -5,7 +5,7 @@ const packageSchema = new mongoose.Schema(
     provider: {
       type: String,
       required: true,
-      enum: ["doctor", "nurse", "physiotherapist", "social worker"],
+      enum: ["doctor", "nurse", "physiotherapist", "social worker", "pharmacist"],
     },
     amount: {
       type: Number,
