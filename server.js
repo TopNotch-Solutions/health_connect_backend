@@ -341,6 +341,41 @@ io.on("connection", (socket) => {
     };
   };
 
+  const ensureRequestConsultationCost = async (request) => {
+    if (
+      typeof request?.consultationCost === "number" &&
+      Number.isFinite(request.consultationCost) &&
+      request.consultationCost > 0
+    ) {
+      return true;
+    }
+
+    const ailmentCategory =
+      request?.ailmentCategoryId &&
+      typeof request.ailmentCategoryId === "object" &&
+      (request.ailmentCategoryId.teleconsultationCost !== undefined ||
+        request.ailmentCategoryId.physicalconsultationCost !== undefined)
+        ? request.ailmentCategoryId
+        : await AilmentCategory.findById(request.ailmentCategoryId);
+
+    if (!ailmentCategory) {
+      return false;
+    }
+
+    const selectedCost =
+      request.consultationMode === "video_consultation"
+        ? ailmentCategory.teleconsultationCost
+        : ailmentCategory.physicalconsultationCost;
+    const parsedCost = parseFloat(selectedCost);
+
+    if (isNaN(parsedCost) || parsedCost <= 0) {
+      return false;
+    }
+
+    request.consultationCost = parsedCost;
+    return true;
+  };
+
   socket.on("join", (data) => {
     const { role, userId } = data;
 
@@ -848,6 +883,14 @@ io.on("connection", (socket) => {
       // Mark locationTracking as modified to ensure it's saved
       request.markModified("locationTracking");
 
+      if (!(await ensureRequestConsultationCost(request))) {
+        socket.emit("requestError", {
+          error:
+            "Consultation cost for this request is unavailable. Please contact support.",
+        });
+        return;
+      }
+
       await request.save();
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
@@ -1133,6 +1176,18 @@ io.on("connection", (socket) => {
         }
       }
 
+      const activeForProvider = await ConsultationRequest.findOne({
+        providerId: validProviderId,
+        status: { $in: PROVIDER_ACTIVE_STATUSES },
+      }).select("_id status");
+      if (activeForProvider) {
+        socket.emit("requestError", {
+          error:
+            "You already have an ongoing consultation. Please complete or cancel it before accepting another request.",
+        });
+        return;
+      }
+
       const acceptProviderCoordinates =
         normalizeCoordinates(providerLocation) ||
         normalizeCoordinates(socket.providerLocation);
@@ -1195,6 +1250,13 @@ io.on("connection", (socket) => {
       request.providerId = validProviderId;
       if (nextStatus === "payment_pending") {
         request.paymentStatus = "pending";
+      }
+      if (!(await ensureRequestConsultationCost(request))) {
+        socket.emit("requestError", {
+          error:
+            "Consultation cost for this request is unavailable. Please contact support.",
+        });
+        return;
       }
       // Note: timeline.providerAccepted will be set automatically by pre-save hook
       // No need to manually set providerAssigned
@@ -1387,6 +1449,13 @@ io.on("connection", (socket) => {
           ) {
             request.rejectedBy.push(rejectingProviderIdObj);
           }
+          if (!(await ensureRequestConsultationCost(request))) {
+            socket.emit("requestError", {
+              error:
+                "Consultation cost for this request is unavailable. Please contact support.",
+            });
+            return;
+          }
           await request.save();
         }
 
@@ -1466,6 +1535,13 @@ io.on("connection", (socket) => {
           }
           // Optionally expire the request since nobody can take it
           request.status = "expired";
+          if (!(await ensureRequestConsultationCost(request))) {
+            socket.emit("requestError", {
+              error:
+                "Consultation cost for this request is unavailable. Please contact support.",
+            });
+            return;
+          }
           await request.save();
           if (patientSocketId) {
             io.to(patientSocketId).emit("requestUpdated", request);
@@ -1489,6 +1565,13 @@ io.on("connection", (socket) => {
           }
         }
         request.status = "searching";
+        if (!(await ensureRequestConsultationCost(request))) {
+          socket.emit("requestError", {
+            error:
+              "Consultation cost for this request is unavailable. Please contact support.",
+          });
+          return;
+        }
         await request.save();
         // Notify rejecting provider to hide
         socket.emit("requestHidden", { requestId: request._id });
@@ -1780,6 +1863,14 @@ io.on("connection", (socket) => {
 
       request.status = status;
 
+      if (!(await ensureRequestConsultationCost(request))) {
+        socket.emit("requestError", {
+          error:
+            "Consultation cost for this request is unavailable. Please contact support.",
+        });
+        return;
+      }
+
       await request.save();
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
@@ -1947,6 +2038,14 @@ io.on("connection", (socket) => {
         reason: reason || "No reason provided",
         cancelledAt: new Date(),
       };
+
+      if (!(await ensureRequestConsultationCost(request))) {
+        socket.emit("requestError", {
+          error:
+            "Consultation cost for this request is unavailable. Please contact support.",
+        });
+        return;
+      }
 
       await request.save();
       await request.populate("patientId", "fullname cellphoneNumber");
