@@ -1881,10 +1881,23 @@ io.on("connection", (socket) => {
 
       // Process payment when consultation is completed
       if (status === "completed") {
-          const provider = await User.findById(request.providerId._id);
-          provider.consultations = provider.consultations - 1;
+        const provider = await User.findById(request.providerId._id);
+        if (provider) {
+          provider.consultations = Math.max(0, provider.consultations - 1);
+          await provider.save();
 
-                 await provider.save();
+          const earningAmount = parseFloat(request.consultationCost || 0);
+          if (!isNaN(earningAmount) && earningAmount > 0) {
+            await Transaction.create({
+              userId: provider._id,
+              type: "earning",
+              amount: earningAmount,
+              time: new Date(),
+              referrence: `Consultation Request: ${request._id}`,
+              status: "completed",
+            });
+          }
+        }
       }
 
       // Notify patient using _id
