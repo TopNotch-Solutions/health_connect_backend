@@ -196,7 +196,7 @@ io.on("connection", (socket) => {
     "arrived",
     "in_progress",
   ];
-  const SEARCH_RADIUS_MAX_KM = 8;
+  const SEARCH_RADIUS_MAX_KM = 22;
   const SEARCH_RADIUS_STEP_MINUTES = 1;
   const SEARCH_EXPIRE_HOURS = 6;
 
