@@ -46,6 +46,7 @@ const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
 const Notification = require("./models/notification");
 const { sendPushNotification } = require("./utils/pushNotifications");
+const { type } = require("os");
 
 app.use(express.static("public"));
 app.use(express.json({ limit: "50mb" }));
@@ -329,7 +330,12 @@ io.on("connection", (socket) => {
       patientCoordinates.latitude,
       patientCoordinates.longitude,
     );
-
+console.log("📐 Distance calculation:", {
+      provider: normalizedProviderCoordinates,
+      patient: patientCoordinates,
+      distanceInKm,
+      allowedRadiusKm,
+    });
     return {
       allowed: distanceInKm <= allowedRadiusKm,
       reason:
@@ -1893,7 +1899,7 @@ io.on("connection", (socket) => {
               type: "earning",
               amount: earningAmount,
               time: new Date(),
-              referrence: `Consultation Request: ${request._id}`,
+              referrence: `${request._id}`,
               status: "completed",
             });
           }
