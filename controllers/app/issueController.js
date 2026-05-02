@@ -1,5 +1,7 @@
 const Issue = require("../../models/issue");
 const Notification = require("../../models/notification");
+const User = require("../../models/user");
+const { notifyAllPortalAdmins } = require("../../utils/notifyPortalAdmins");
 
 exports.createIssue = async (req, res) => {
   const { title, description } = req.body;
@@ -53,6 +55,12 @@ exports.createIssue = async (req, res) => {
       data: {
         message: `Thanks for reporting the issue '${title}'. Our team will check it out shortly.`,
     }});
+    const reporter = await User.findById(id).select("fullname").lean();
+    const reporterName = reporter?.fullname?.trim() || "An app user";
+    await notifyAllPortalAdmins({
+      title: "New issue reported",
+      description: `${reporterName} submitted an issue titled "${title}". Review it in the admin portal.`,
+    });
     const data = await Issue.find({userId: id});
     return res.status(201).json({
       message: "Great! Your issue was created successfully. We appreciate you bringing this to our attention.",

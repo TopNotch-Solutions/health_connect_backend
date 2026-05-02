@@ -11,7 +11,7 @@ const uploadPrescribingCertificate = require('../../middlewares/uploadPrescribin
 const { appTokenMiddleware, checkAppUser, tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddleware');
 const authRouter = Router();
 
-authRouter.post("/register-patient",appTokenMiddleware, checkAppUser, uploadMultiple, registerPatient);
+authRouter.post("/register-patient", uploadMultiple, registerPatient);
 authRouter.post("/register-health-provider",appTokenMiddleware, checkAppUser, uploadMultipleDocuments, registerHealthProvider);
 authRouter.post("/forgot-password-verify-otp",appTokenMiddleware, checkAppUser, verifyOtpReset);
 authRouter.post("/forgot-password-reset/:id",appTokenMiddleware, checkAppUser, resetPassword);

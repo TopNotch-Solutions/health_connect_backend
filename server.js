@@ -39,6 +39,7 @@ const packagesAppRouter = require("./routes/app/packagesRoutes");
 const authPortalRouter = require("./routes/portal/authController");
 const requestPortalRouter = require("./routes/portal/requestRoute");
 const packagesPortalRouter = require("./routes/portal/packagesRoute");
+const issuePortalRouter = require("./routes/portal/issueRoute");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -46,7 +47,6 @@ const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
 const Notification = require("./models/notification");
 const { sendPushNotification } = require("./utils/pushNotifications");
-const { type } = require("os");
 
 app.use(express.static("public"));
 app.use(express.json({ limit: "50mb" }));
@@ -83,6 +83,7 @@ app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
 app.use("/api/portal/adverts", advertsRouter);
 app.use("/api/portal/packages", packagesPortalRouter);
+app.use("/api/portal/issue", issuePortalRouter);
 
 const onlineUsers = {
   patient: new Set(),
@@ -330,12 +331,7 @@ io.on("connection", (socket) => {
       patientCoordinates.latitude,
       patientCoordinates.longitude,
     );
-console.log("📐 Distance calculation:", {
-      provider: normalizedProviderCoordinates,
-      patient: patientCoordinates,
-      distanceInKm,
-      allowedRadiusKm,
-    });
+
     return {
       allowed: distanceInKm <= allowedRadiusKm,
       reason:
@@ -624,10 +620,7 @@ console.log("📐 Distance calculation:", {
               console.error("Error creating notification:", err);
             }
 
-            if (
-              providerUser.expoPushToken &&
-              providerUser.isPushNotificationEnabled
-            ) {
+            if (providerUser.expoPushToken) {
               sendPushNotification(
                 providerUser.expoPushToken,
                 "New Consultation Request",
@@ -1364,10 +1357,7 @@ console.log("📐 Distance calculation:", {
           console.error("Error creating notification:", err);
         }
 
-        if (
-          patientUser.expoPushToken &&
-          patientUser.isPushNotificationEnabled
-        ) {
+        if (patientUser.expoPushToken) {
           sendPushNotification(
             patientUser.expoPushToken,
             nextStatus === "payment_pending"
@@ -1973,10 +1963,7 @@ console.log("📐 Distance calculation:", {
             console.error("Error creating notification:", err);
           }
 
-          if (
-            patientUser.expoPushToken &&
-            patientUser.isPushNotificationEnabled
-          ) {
+          if (patientUser.expoPushToken) {
             sendPushNotification(patientUser.expoPushToken, title, body, {
               requestId: request._id,
             });
@@ -2118,11 +2105,7 @@ console.log("📐 Distance calculation:", {
       // Send push notification to the other party
       if (cancelledBy === "patient" && request.providerId) {
         const providerUser = await User.findById(request.providerId._id);
-        if (
-          providerUser &&
-          providerUser.expoPushToken &&
-          providerUser.isPushNotificationEnabled
-        ) {
+        if (providerUser && providerUser.expoPushToken) {
           sendPushNotification(
             providerUser.expoPushToken,
             "Request Cancelled",
@@ -2132,11 +2115,7 @@ console.log("📐 Distance calculation:", {
         }
       } else if (cancelledBy === "provider") {
         const patientUser = await User.findById(request.patientId._id);
-        if (
-          patientUser &&
-          patientUser.expoPushToken &&
-          patientUser.isPushNotificationEnabled
-        ) {
+        if (patientUser && patientUser.expoPushToken) {
           sendPushNotification(
             patientUser.expoPushToken,
             "Request Cancelled",
@@ -2240,7 +2219,7 @@ schedule.scheduleJob("*/30 * * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+        if (provider.expoPushToken) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expired",
@@ -2327,7 +2306,7 @@ schedule.scheduleJob("0 9 * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+        if (provider.expoPushToken) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expiring Soon",
@@ -2360,8 +2339,13 @@ schedule.scheduleJob("0 9 * * *", async () => {
 
 mongoose
   .connect(process.env.MONGO_URI, {})
-  .then(() => {
+  .then(async () => {
     console.log("MongoDB connected");
+    try {
+      await User.syncIndexes();
+    } catch (e) {
+      console.error("User.syncIndexes failed:", e.message);
+    }
     server.listen(process.env.PORT, () => {
       console.log(`Server is running on port ${process.env.PORT}`);
     });

@@ -107,11 +107,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-  isPushNotificationEnabled: {
-    type: Boolean,
-    required: true,
-    default: true,
-  },
   visibility: {
     type: String,
     enum: ["Online", "Offline"],

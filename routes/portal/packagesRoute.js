@@ -2,6 +2,7 @@ const { Router } = require("express");
 const {
   create,
   all,
+  count,
   get,
   update,
   delete: deletePackage,
@@ -12,6 +13,8 @@ const packagesPortalRouter = Router();
 packagesPortalRouter.post("/create", create);
 
 packagesPortalRouter.get("/all", all);
+
+packagesPortalRouter.get("/count", count);
 
 packagesPortalRouter.get("/:id", get);
 
