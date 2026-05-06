@@ -18,10 +18,13 @@ const sendPushNotification = async (pushToken, title, body, data = {}) => {
   const messages = [];
   messages.push({
     to: pushToken,
-    sound: 'default',
+    // iOS picks up this sound from the app bundle (healthconnect_alert.wav).
+    // Android ignores this field — the channel's sound setting takes over.
+    sound: 'healthconnect_alert.wav',
     title: title,
     body: body,
     data: data,
+    channelId: 'healthconnect-default', // route to the custom HealthConnect channel on Android
   });
 
   const chunks = expo.chunkPushNotifications(messages);

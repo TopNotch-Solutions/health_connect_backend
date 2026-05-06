@@ -26,5 +26,5 @@ const notificationPortalSchema = new mongoose.Schema(
   }
 );
 
-const NotificationPortal = mongoose.model("notification_admin", notificationPortalSchema);
+const NotificationPortal = mongoose.model("notification_user", notificationPortalSchema);
 module.exports = NotificationPortal;

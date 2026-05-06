@@ -67,21 +67,6 @@ exports.all = async (req, res) => {
   }
 };
 
-exports.count = async (req, res) => {
-  try {
-    const count = await Package.countDocuments();
-    return res.status(200).json({
-      status: "SUCCESS",
-      count,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      status: "ERROR",
-      message: error.message,
-    });
-  }
-};
-
 exports.get = async (req, res) => {
   try {
     const { id } = req.params;

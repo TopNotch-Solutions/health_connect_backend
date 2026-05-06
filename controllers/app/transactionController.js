@@ -23,6 +23,9 @@ exports.purchasePackage = async (req, res) => {
       return res.status(404).json({ message: "It seems you don’t have an account yet. Please register to get started." });
     }
    const myPackage = await Package.findById(packageId)
+    if (!myPackage) {
+      return res.status(404).json({ message: "Package not found" });
+    }
     const referrence = generateTransactionReference();
     await Transaction.create({
       userId: id,

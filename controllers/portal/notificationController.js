@@ -2,7 +2,6 @@ const NotificationPortal = require("../../models/notificationPortal");
 const PortalUser = require("../../models/userPortal");
 const Notification = require("../../models/notification");
 const User = require("../../models/user");
-const sendFirebasePushNotification = require("../../utils/sendPushNotification");
 
 exports.getAllPortalNotifications = async (req, res) => {
   const { id } = req.params;
@@ -132,51 +131,29 @@ exports.sendNotificationToAllUsers = async (req, res) => {
   }
 
   try {
-    const notificationType = type || "alert";
-    const dataPayload = { type: notificationType };
-
-    const allUsers = await User.find().select("_id expoPushToken");
-
+    // Get all app users
+    const allUsers = await User.find().select('_id');
+    
     if (allUsers.length === 0) {
       return res.status(404).json({ message: "No app users found." });
     }
 
-    const notifications = allUsers.map((user) => ({
+    // Create notifications for all users
+    const notifications = allUsers.map(user => ({
       userId: user._id,
-      type: notificationType,
+      type: type || "alert",
       title,
       message,
       status: "sent",
     }));
 
+    // Insert all notifications
     await Notification.insertMany(notifications);
 
-    let pushAttempted = 0;
-    let pushSucceeded = 0;
-    for (const user of allUsers) {
-      if (!user.expoPushToken) {
-        continue;
-      }
-      pushAttempted += 1;
-      const pushResult = await sendFirebasePushNotification(
-        user.expoPushToken,
-        title,
-        message,
-        dataPayload,
-      );
-      if (pushResult) {
-        pushSucceeded += 1;
-      }
-    }
-
-    res.status(201).json({
-      status: true,
+    res.status(201).json({ 
+      status: true, 
       message: `Notification sent successfully to ${allUsers.length} users.`,
-      data: {
-        count: allUsers.length,
-        firebasePushAttempted: pushAttempted,
-        firebasePushSucceeded: pushSucceeded,
-      },
+      data: { count: allUsers.length }
     });
   } catch (error) {
     console.error("Error sending notification to all users:", error);
@@ -203,39 +180,24 @@ exports.sendNotificationToUser = async (req, res) => {
 
   try {
     // Verify user exists
-    const user = await User.findById(userId).select("_id expoPushToken");
+    const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({
-        message: "We couldn’t find an account with the provided details.",
-      });
+      return res.status(404).json({ message: "App We couldn’t find an account with the provided details." });
     }
 
-    const notificationType = type || "alert";
-
+    // Create notification
     const notification = await Notification.createNotification({
       userId,
-      type: notificationType,
+      type: type || "alert",
       title,
       message,
       status: "sent",
     });
 
-    let firebasePushSent = false;
-    if (user.expoPushToken) {
-      const pushResult = await sendFirebasePushNotification(
-        user.expoPushToken,
-        title,
-        message,
-        { type: notificationType },
-      );
-      firebasePushSent = Boolean(pushResult);
-    }
-
-    res.status(201).json({
-      status: true,
+    res.status(201).json({ 
+      status: true, 
       message: "Notification sent successfully.",
-      data: notification,
-      firebasePushSent,
+      data: notification
     });
   } catch (error) {
     console.error("Error sending notification to user:", error);

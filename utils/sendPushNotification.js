@@ -1,12 +1,10 @@
 const admin = require('../config/firebase');
 /**
- * Send push notification via Firebase Cloud Messaging.
- * Does not throw: failures are logged and `null` is returned so callers can always continue.
+ * Send push notification via Firebase Cloud Messaging
  * @param {string} fcmToken - Device FCM token
  * @param {string} title - Notification title
  * @param {string} body - Notification body
  * @param {object} [data] - Optional custom data payload
- * @returns {Promise<string|null>} FCM message id on success, null on failure or missing token
  */
 const sendPushNotifications = async (fcmToken, title, body, data) => {
   console.log("Sending push notification to token:", fcmToken, "with title:", title, "and body:", body);
@@ -36,7 +34,7 @@ const sendPushNotifications = async (fcmToken, title, body, data) => {
     return response;
   } catch (error) {
     console.error("Push notification error:", error.message);
-    return null;
+    throw error;
   }
 };
 

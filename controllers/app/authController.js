@@ -9,7 +9,7 @@ const { validatePassword } = require("../../utils/validatePassword");
 const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
-const { notifyAllPortalAdmins } = require("../../utils/notifyPortalAdmins");
+const NotificationPortal = require("../../models/notificationPortal");
 const { sendPushNotification } = require("../../utils/pushNotifications");
 const { appUserToken, loginToken } = require("../../utils/generateJWTToken");
 const sendPushNotifications = require("../../utils/sendPushNotification");
@@ -160,10 +160,16 @@ Kind regards,
 The Health Platform Team`,
     });
 
-    await notifyAllPortalAdmins({
-      title: "New Patient Registered",
-      description: `A new patient, ${newUser.fullname}, has just registered on the platform.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "New Patient Registered",
+          message: `A new patient, ${newUser.fullname}, has just registered on the platform.`,
+        });
+      }
+    }
 
     res.status(201).json({
       status: true,
@@ -386,10 +392,16 @@ The Health Platform Team`,
       );
     }
 
-    await notifyAllPortalAdmins({
-      title: "New health provider has registered",
-      description: `A new health provider, ${newUser.fullname}, has just registered on the platform. Kindly review their details.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "New health provider has registered",
+          message: `A new health provider, ${newUser.fullname}, has just registered on the platform. Kindly review their details.`,
+        });
+      }
+    }
     res.status(201).json({
       status: true,
       message: "Health provider registration completed successfully.",
@@ -685,6 +697,7 @@ exports.login = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
+              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -701,6 +714,7 @@ exports.login = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
+              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -757,6 +771,7 @@ exports.userDetails = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
+              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -773,6 +788,7 @@ exports.userDetails = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
+              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -896,10 +912,17 @@ exports.updateProfileImage = async (req, res) => {
       status: "sent",
       message: `Dear ${newUser.fullname}, your profile details have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${newUser.fullname} has updated their profile detail and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${newUser.fullname} has updated their profile detail and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your profile image has been updated successfully",
@@ -1215,10 +1238,17 @@ exports.updateIDFront = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your ID front has been updated successfully",
@@ -1278,10 +1308,17 @@ exports.updateIDBack = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your ID back has been updated successfully",
@@ -1349,10 +1386,17 @@ exports.updateFinalQualification = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your final qualification has been updated successfully",
@@ -1421,10 +1465,17 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message:
@@ -1493,10 +1544,17 @@ exports.updateHPCNAQualification = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
-    await notifyAllPortalAdmins({
-      title: "Profile Update Pending Verification",
-      description: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
-    });
+    const allPortalUsers = await NotificationPortal.find();
+
+    if (allPortalUsers && allPortalUsers.length > 0) {
+      for (const portalUserNotification of allPortalUsers) {
+        await NotificationPortal.create({
+          userId: portalUserNotification.userId,
+          title: "Profile Update Pending Verification",
+          message: `The user ${existingUser.fullname} has updated their profile details and is awaiting administrative verification.`,
+        });
+      }
+    }
     res.status(200).json({
       status: true,
       message: "Your HPCNA qualification has been updated successfully",
@@ -1755,6 +1813,7 @@ exports.updatePushToken = async (req, res) => {
     }
 
     existingUser.expoPushToken = pushToken;
+    existingUser.isPushNotificationEnabled = true;
     await existingUser.save();
 
     res.status(200).json({

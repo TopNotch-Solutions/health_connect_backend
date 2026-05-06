@@ -39,7 +39,6 @@ const packagesAppRouter = require("./routes/app/packagesRoutes");
 const authPortalRouter = require("./routes/portal/authController");
 const requestPortalRouter = require("./routes/portal/requestRoute");
 const packagesPortalRouter = require("./routes/portal/packagesRoute");
-const issuePortalRouter = require("./routes/portal/issueRoute");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -83,7 +82,6 @@ app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
 app.use("/api/portal/adverts", advertsRouter);
 app.use("/api/portal/packages", packagesPortalRouter);
-app.use("/api/portal/issue", issuePortalRouter);
 
 const onlineUsers = {
   patient: new Set(),
@@ -198,7 +196,7 @@ io.on("connection", (socket) => {
     "arrived",
     "in_progress",
   ];
-  const SEARCH_RADIUS_MAX_KM = 22;
+  const SEARCH_RADIUS_MAX_KM = 8;
   const SEARCH_RADIUS_STEP_MINUTES = 1;
   const SEARCH_EXPIRE_HOURS = 6;
 
@@ -620,7 +618,10 @@ io.on("connection", (socket) => {
               console.error("Error creating notification:", err);
             }
 
-            if (providerUser.expoPushToken) {
+            if (
+              providerUser.expoPushToken &&
+              providerUser.isPushNotificationEnabled
+            ) {
               sendPushNotification(
                 providerUser.expoPushToken,
                 "New Consultation Request",
@@ -1357,7 +1358,10 @@ io.on("connection", (socket) => {
           console.error("Error creating notification:", err);
         }
 
-        if (patientUser.expoPushToken) {
+        if (
+          patientUser.expoPushToken &&
+          patientUser.isPushNotificationEnabled
+        ) {
           sendPushNotification(
             patientUser.expoPushToken,
             nextStatus === "payment_pending"
@@ -1877,23 +1881,10 @@ io.on("connection", (socket) => {
 
       // Process payment when consultation is completed
       if (status === "completed") {
-        const provider = await User.findById(request.providerId._id);
-        if (provider) {
-          provider.consultations = Math.max(0, provider.consultations - 1);
-          await provider.save();
+          const provider = await User.findById(request.providerId._id);
+          provider.consultations = provider.consultations - 1;
 
-          const earningAmount = parseFloat(request.consultationCost || 0);
-          if (!isNaN(earningAmount) && earningAmount > 0) {
-            await Transaction.create({
-              userId: provider._id,
-              type: "earning",
-              amount: earningAmount,
-              time: new Date(),
-              referrence: `${request._id}`,
-              status: "completed",
-            });
-          }
-        }
+                 await provider.save();
       }
 
       // Notify patient using _id
@@ -1963,7 +1954,10 @@ io.on("connection", (socket) => {
             console.error("Error creating notification:", err);
           }
 
-          if (patientUser.expoPushToken) {
+          if (
+            patientUser.expoPushToken &&
+            patientUser.isPushNotificationEnabled
+          ) {
             sendPushNotification(patientUser.expoPushToken, title, body, {
               requestId: request._id,
             });
@@ -2105,7 +2099,11 @@ io.on("connection", (socket) => {
       // Send push notification to the other party
       if (cancelledBy === "patient" && request.providerId) {
         const providerUser = await User.findById(request.providerId._id);
-        if (providerUser && providerUser.expoPushToken) {
+        if (
+          providerUser &&
+          providerUser.expoPushToken &&
+          providerUser.isPushNotificationEnabled
+        ) {
           sendPushNotification(
             providerUser.expoPushToken,
             "Request Cancelled",
@@ -2115,7 +2113,11 @@ io.on("connection", (socket) => {
         }
       } else if (cancelledBy === "provider") {
         const patientUser = await User.findById(request.patientId._id);
-        if (patientUser && patientUser.expoPushToken) {
+        if (
+          patientUser &&
+          patientUser.expoPushToken &&
+          patientUser.isPushNotificationEnabled
+        ) {
           sendPushNotification(
             patientUser.expoPushToken,
             "Request Cancelled",
@@ -2219,7 +2221,7 @@ schedule.scheduleJob("*/30 * * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken) {
+        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expired",
@@ -2306,7 +2308,7 @@ schedule.scheduleJob("0 9 * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken) {
+        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expiring Soon",
@@ -2339,13 +2341,8 @@ schedule.scheduleJob("0 9 * * *", async () => {
 
 mongoose
   .connect(process.env.MONGO_URI, {})
-  .then(async () => {
+  .then(() => {
     console.log("MongoDB connected");
-    try {
-      await User.syncIndexes();
-    } catch (e) {
-      console.error("User.syncIndexes failed:", e.message);
-    }
     server.listen(process.env.PORT, () => {
       console.log(`Server is running on port ${process.env.PORT}`);
     });
