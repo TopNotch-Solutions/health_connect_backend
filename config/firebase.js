@@ -2,10 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const admin = require("firebase-admin");
 
-const serviceAccountPath = path.resolve(
-  __dirname,
-  "../health-connect-uat-firebase-adminsdk-fbsvc-51241b9223.json",
-);
+const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+  ? path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)
+  : path.resolve(
+      __dirname,
+      "../health-connect-uat-firebase-adminsdk-fbsvc-51241b9223.json",
+    );
 
 let firebaseEnabled = false;
 
@@ -29,7 +31,7 @@ if (fs.existsSync(serviceAccountPath)) {
   }
 } else {
   console.warn(
-    `Firebase service account file not found at ${serviceAccountPath}. Firebase push notifications will be disabled.`,
+    `Firebase service account file not found at ${serviceAccountPath}. Firebase push notifications will be disabled until credentials are added.`,
   );
 }
 

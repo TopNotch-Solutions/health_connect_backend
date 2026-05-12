@@ -39,6 +39,7 @@ const packagesAppRouter = require("./routes/app/packagesRoutes");
 const authPortalRouter = require("./routes/portal/authController");
 const requestPortalRouter = require("./routes/portal/requestRoute");
 const packagesPortalRouter = require("./routes/portal/packagesRoute");
+const prescriptionAppRouter = require("./routes/app/prescriptionRoute");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -77,6 +78,23 @@ app.use("/api/app/faq", faqAppRouter);
 app.use("/api/portal/notification", notificationPortalRouter);
 app.use("/api/app/adverts", appAdvertRouter);
 app.use("/api/app/packages", packagesAppRouter);
+app.use("/api/app/prescription", prescriptionAppRouter);
+
+// Provider request history — returns ALL requests for the authenticated provider (incl. completed)
+const { tokenAuthMiddleware, checkUser } = require("./middlewares/authMiddleware");
+app.get("/api/app/requests/my-history", tokenAuthMiddleware, checkUser, async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const requests = await ConsultationRequest.find({ providerId })
+      .populate("patientId", "fullname cellphoneNumber profileImage")
+      .populate("ailmentCategoryId", "title provider requiresPrescription")
+      .sort({ createdAt: -1 });
+    return res.status(200).json({ requests });
+  } catch (err) {
+    console.error("my-history error:", err);
+    return res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
 
 app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
@@ -112,7 +130,8 @@ io.on("connection", (socket) => {
       return false;
     }
 
-    // Check if provider role matches ailment category's provider type (if specified)
+    // Provider type is the primary routing rule. Specializations are used only
+    // as a fallback for older categories that do not have a provider type set.
     if (ailmentCategory.provider) {
       const roleMapping = {
         doctor: "Doctor",
@@ -128,6 +147,8 @@ io.on("connection", (socket) => {
       ) {
         return false;
       }
+
+      return true;
     }
 
     // Check if provider has any specializations that match the ailment category's specializations
@@ -2324,29 +2345,28 @@ schedule.scheduleJob("0 9 * * *", async () => {
         console.log(
           `Notification sent to user: ${provider.fullname} (${provider._id}) - Expiry: ${provider.hpcnaExpiryDate.toDateString()}`,
         );
-      } else {
-        console.log(
-          `Skipped user: ${provider.fullname} (${provider._id}) - Already notified recently`,
-        );
       }
     }
 
     console.log(
-      `Task completed. Sent ${notifiedCount} expiry warnings out of ${healthProviders.length} providers with qualifications expiring in 7 days.`,
+      `[Qualification Expiry Cron] Notified ${notifiedCount} provider(s).`,
     );
-  } catch (error) {
-    console.error("Error checking expiring qualifications:", error);
+  } catch (err) {
+    console.error("[Qualification Expiry Cron] Error:", err.message);
   }
 });
 
+const PORT = process.env.PORT || 5000;
+
 mongoose
-  .connect(process.env.MONGO_URI, {})
+  .connect(process.env.MONGO_URI)
   .then(() => {
-    console.log("MongoDB connected");
-    server.listen(process.env.PORT, () => {
-      console.log(`Server is running on port ${process.env.PORT}`);
+    console.log("Connected to MongoDB");
+    server.listen(PORT, () => {
+      console.log("Server running on port " + PORT);
     });
   })
-  .catch((error) => {
-    console.error("Error connecting to MongoDB:", error);
+  .catch(function(err) {
+    console.error("MongoDB connection error:", err.message);
+    process.exit(1);
   });

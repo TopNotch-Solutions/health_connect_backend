@@ -151,8 +151,50 @@ const userSchema = new mongoose.Schema({
   NQAEvaluation:{
     type: String,
     require: false
-  }
-  
+  },
+
+  // ── Pharmacist-specific fields ────────────────────────────────────────────
+  registeredTradingName: {
+    type: String,
+    required: false,
+  },
+  companyRegistrationNo: {
+    type: String,
+    required: false,
+  },
+  businessEmail: {
+    type: String,
+    required: false,
+  },
+  pharmacyCouncilNo: {
+    type: String,
+    required: false,
+  },
+  practiceNumber: {
+    type: String,
+    required: false,
+  },
+  // Upload: Valid Premises Registration Certificate (HPCNA)
+  hpcnaCertificate: {
+    type: String,
+    required: false,
+  },
+  // GPS coordinates for dispatch
+  gpsCoordinates: {
+    longitude: { type: Number, required: false },
+    latitude:  { type: Number, required: false },
+  },
+  // Cell number for settlement / prepaid credit payouts
+  settlementCellNumber: {
+    type: String,
+    required: false,
+  },
+  // Acknowledgement of liability under HPCNA
+  hpcnaLicenseExpiryAcknowledged: {
+    type: Boolean,
+    default: false,
+  },
+
 },{
     timestamps: true,
   });

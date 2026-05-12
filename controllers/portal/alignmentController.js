@@ -29,6 +29,7 @@ exports.create = async (req, res) => {
       specialization,
       provider,
       supportsTeleconsultation,
+      requiresPrescription,
     } = req.body;
     const image = req.file ? req.file.filename : null;
 
@@ -146,10 +147,8 @@ exports.create = async (req, res) => {
               parsedPhysicalconsultationCost,
             specialization: specializationArray,
             provider,
-            supportsTeleconsultation: parseBooleanish(
-              supportsTeleconsultation,
-              false,
-            ),
+            supportsTeleconsultation: parseBooleanish(supportsTeleconsultation, false),
+            requiresPrescription: parseBooleanish(requiresPrescription, false),
             image,
         });
         await ailment.save();
@@ -193,7 +192,8 @@ exports.updateAilment = async (req, res) => {
       physicalconsultationCost,
       specialization,
       supportsTeleconsultation,
-    } = req.body; 
+      requiresPrescription,
+    } = req.body;
     if (!title) {
       return res
         .status(400)
@@ -305,6 +305,12 @@ exports.updateAilment = async (req, res) => {
       ailment.supportsTeleconsultation = parseBooleanish(
         supportsTeleconsultation,
         ailment.supportsTeleconsultation,
+      );
+    }
+    if (requiresPrescription !== undefined) {
+      ailment.requiresPrescription = parseBooleanish(
+        requiresPrescription,
+        ailment.requiresPrescription,
       );
     }
     await ailment.save();

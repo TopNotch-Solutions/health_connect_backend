@@ -1,30 +1,38 @@
-const admin = require('../config/firebase');
+const admin = require("../config/firebase");
+
 /**
- * Send push notification via Firebase Cloud Messaging
- * @param {string} fcmToken - Device FCM token
+ * Send push notification via Firebase Admin.
+ * @param {string} pushToken - FCM device token
  * @param {string} title - Notification title
  * @param {string} body - Notification body
  * @param {object} [data] - Optional custom data payload
  */
-const sendPushNotifications = async (fcmToken, title, body, data) => {
-  console.log("Sending push notification to token:", fcmToken, "with title:", title, "and body:", body);
-  if (!fcmToken) {
+const sendPushNotifications = async (pushToken, title, body, data = {}) => {
+  console.log(
+    "Sending push notification to token:",
+    pushToken,
+    "with title:",
+    title,
+    "and body:",
+    body,
+  );
+
+  if (!pushToken) {
     console.warn("FCM token missing");
-    return;
+    return null;
   }
 
   const message = {
-    token: fcmToken,
+    token: pushToken,
     notification: {
       title,
       body,
     },
   };
 
-  // Attach data only if provided
   if (data && Object.keys(data).length > 0) {
     message.data = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, String(value)])
+      Object.entries(data).map(([key, value]) => [key, String(value)]),
     );
   }
 

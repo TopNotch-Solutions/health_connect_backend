@@ -204,6 +204,15 @@ exports.registerHealthProvider = async (req, res) => {
     governingCouncil,
     bio,
     pushToken,
+    registeredTradingName,
+    companyRegistrationNo,
+    businessEmail,
+    pharmacyCouncilNo,
+    practiceNumber,
+    gpsLatitude,
+    gpsLongitude,
+    settlementCellNumber,
+    hpcnaLicenseExpiryAcknowledged,
   } = req.body;
   console.log(req.body);
   const files = req.files;
@@ -260,6 +269,31 @@ exports.registerHealthProvider = async (req, res) => {
 
   if (!role) {
     return res.status(400).json({ message: "Role is required." });
+  }
+  const newRole = role.toLowerCase();
+
+  if (newRole === "pharmacist") {
+    if (!registeredTradingName) {
+      return res
+        .status(400)
+        .json({ message: "Registered trading name is required." });
+    }
+    if (!pharmacyCouncilNo) {
+      return res
+        .status(400)
+        .json({ message: "Pharmacy Council number is required." });
+    }
+    if (!practiceNumber) {
+      return res.status(400).json({ message: "Practice number is required." });
+    }
+    const acknowledged =
+      hpcnaLicenseExpiryAcknowledged === true ||
+      hpcnaLicenseExpiryAcknowledged === "true";
+    if (!acknowledged) {
+      return res.status(400).json({
+        message: "HPCNA liability acknowledgement is required.",
+      });
+    }
   }
   if (!nationalId) {
     return res.status(400).json({ message: "National ID number is required." });
@@ -331,8 +365,6 @@ exports.registerHealthProvider = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newRole = role.toLowerCase();
-
     const newUser = await User.create({
       fullname,
       cellphoneNumber,
@@ -359,7 +391,29 @@ exports.registerHealthProvider = async (req, res) => {
       dispensingCertificateLicence,
       expoPushToken: pushToken,
       trainingCertificate: trainingCertificate || null,
-      NQAEvaluation: NQAEvaluation || null
+      NQAEvaluation: NQAEvaluation || null,
+      registeredTradingName:
+        newRole === "pharmacist" ? registeredTradingName : undefined,
+      companyRegistrationNo:
+        newRole === "pharmacist" ? companyRegistrationNo : undefined,
+      businessEmail: newRole === "pharmacist" ? businessEmail : undefined,
+      pharmacyCouncilNo:
+        newRole === "pharmacist" ? pharmacyCouncilNo : undefined,
+      practiceNumber: newRole === "pharmacist" ? practiceNumber : undefined,
+      gpsCoordinates:
+        newRole === "pharmacist" && gpsLatitude && gpsLongitude
+          ? {
+              latitude: parseFloat(gpsLatitude),
+              longitude: parseFloat(gpsLongitude),
+            }
+          : undefined,
+      settlementCellNumber:
+        newRole === "pharmacist" ? settlementCellNumber : undefined,
+      hpcnaLicenseExpiryAcknowledged:
+        newRole === "pharmacist"
+          ? hpcnaLicenseExpiryAcknowledged === true ||
+            hpcnaLicenseExpiryAcknowledged === "true"
+          : false,
     });
     await Notification.createNotification({
       userId: newUser._id,
@@ -809,7 +863,18 @@ exports.userDetails = async (req, res) => {
               finalQualification: user.finalQualification,
               idDocumentFront: user.idDocumentFront,
               idDocumentBack: user.idDocumentBack,
-              consultations: user.consultations
+              consultations: user.consultations,
+              // ── Pharmacist-specific fields ─────────────────────────────
+              registeredTradingName: user.registeredTradingName,
+              companyRegistrationNo: user.companyRegistrationNo,
+              businessEmail: user.businessEmail,
+              pharmacyCouncilNo: user.pharmacyCouncilNo,
+              practiceNumber: user.practiceNumber,
+              gpsCoordinates: user.gpsCoordinates,
+              gpsAddress: user.gpsAddress,
+              settlementCellNumber: user.settlementCellNumber,
+              hpcnaCertificate: user.hpcnaCertificate,
+              hpcnaLicenseExpiryAcknowledged: user.hpcnaLicenseExpiryAcknowledged,
             },
     });
   } catch (error) {
@@ -1861,27 +1926,125 @@ exports.logout = async (req, res) => {
   }
 };
 
-exports.getAppToken = async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// PHARMACIST — Update pharmacy-specific profile fields
+// PUT /api/app/auth/update-pharmacy-profile
+// ─────────────────────────────────────────────────────────────────────────────
+exports.updatePharmacyProfile = async (req, res) => {
   try {
-    const getJwtToken = await appUserToken();
-    if (!getJwtToken) {
-      return res.status(404).json({
-        message:
-          "We're having trouble processing your request. Please try again shortly.",
-      });
+    const userId = req.user.id;
+    const {
+      registeredTradingName,
+      companyRegistrationNo,
+      businessEmail,
+      pharmacyCouncilNo,
+      practiceNumber,
+      gpsLongitude,
+      gpsLatitude,
+      settlementCellNumber,
+      hpcnaExpiryDate,
+      hpcnaLicenseExpiryAcknowledged,
+    } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+    if (user.role !== "pharmacist") {
+      return res.status(403).json({ message: "Only pharmacists can update pharmacy profile." });
     }
 
-    res.status(200).json({
+    if (registeredTradingName !== undefined) user.registeredTradingName = registeredTradingName;
+    if (companyRegistrationNo !== undefined) user.companyRegistrationNo = companyRegistrationNo;
+    if (businessEmail !== undefined) user.businessEmail = businessEmail;
+    if (pharmacyCouncilNo !== undefined) user.pharmacyCouncilNo = pharmacyCouncilNo;
+    if (practiceNumber !== undefined) user.practiceNumber = practiceNumber;
+    if (settlementCellNumber !== undefined) user.settlementCellNumber = settlementCellNumber;
+    if (hpcnaExpiryDate !== undefined) user.hpcnaExpiryDate = new Date(hpcnaExpiryDate);
+    if (hpcnaLicenseExpiryAcknowledged !== undefined)
+      user.hpcnaLicenseExpiryAcknowledged = hpcnaLicenseExpiryAcknowledged === "true" || hpcnaLicenseExpiryAcknowledged === true;
+
+    if (gpsLongitude !== undefined && gpsLatitude !== undefined) {
+      user.gpsCoordinates = {
+        longitude: parseFloat(gpsLongitude),
+        latitude: parseFloat(gpsLatitude),
+      };
+    }
+
+    await user.save();
+
+    return res.status(200).json({
       status: true,
-      message: "App user token retrieved successfully.",
-      token: getJwtToken,
+      message: "Pharmacy profile updated successfully.",
+      user: {
+        registeredTradingName: user.registeredTradingName,
+        companyRegistrationNo: user.companyRegistrationNo,
+        businessEmail: user.businessEmail,
+        pharmacyCouncilNo: user.pharmacyCouncilNo,
+        practiceNumber: user.practiceNumber,
+        gpsCoordinates: user.gpsCoordinates,
+        settlementCellNumber: user.settlementCellNumber,
+        hpcnaExpiryDate: user.hpcnaExpiryDate,
+        hpcnaLicenseExpiryAcknowledged: user.hpcnaLicenseExpiryAcknowledged,
+      },
     });
   } catch (error) {
-    console.error("Error updating push token:", error);
-    res.status(500).json({
-      message:
-        "We're having trouble processing your request. Please try again shortly.",
-      error,
+    console.error("updatePharmacyProfile error:", error);
+    return res.status(500).json({ message: "Server error.", error });
+  }
+};
+
+exports.uploadHpcnaCertificate = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ message: "HPCNA certificate file is required." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+    if (user.role !== "pharmacist") {
+      return res.status(403).json({ message: "Only pharmacists can upload HPCNA certificate." });
+    }
+
+    if (user.hpcnaCertificate) {
+      try {
+        const oldPath = path.join(__dirname, "../../public/images", user.hpcnaCertificate);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      } catch (e) {
+        console.warn("Could not delete old HPCNA certificate:", e.message);
+      }
+    }
+
+    user.hpcnaCertificate = file.filename;
+    await user.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "HPCNA certificate uploaded successfully.",
+      hpcnaCertificate: file.filename,
     });
+  } catch (error) {
+    console.error("uploadHpcnaCertificate error:", error);
+    return res.status(500).json({ message: "Server error.", error });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/app/auth/retrieve-jwt-token
+// Returns a short-lived app token so the mobile client can reach
+// unauthenticated endpoints (registration, forgot-password, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getAppToken = (req, res) => {
+  try {
+    const token = appUserToken();
+    return res.status(200).json({ status: true, token });
+  } catch (error) {
+    console.error("getAppToken error:", error);
+    return res.status(500).json({ message: "Server error.", error });
   }
 };

@@ -35,6 +35,10 @@ const ailmentCategorySchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    requiresPrescription: {
+      type: Boolean,
+      default: false,
+    },
     image: {
       type: String,
       required: true,
