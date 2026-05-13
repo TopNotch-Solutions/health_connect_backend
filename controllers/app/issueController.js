@@ -1,5 +1,7 @@
 const Issue = require("../../models/issue");
 const Notification = require("../../models/notification");
+const User = require("../../models/user");
+const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
 exports.createIssue = async (req, res) => {
   const { title, description } = req.body;
@@ -53,6 +55,15 @@ exports.createIssue = async (req, res) => {
       data: {
         message: `Thanks for reporting the issue '${title}'. Our team will check it out shortly.`,
     }});
+    const issueReporter = await User.findById(id).select(
+      "expoPushToken fullname",
+    );
+    await sendPushToAppUser(
+      issueReporter,
+      "Issue received",
+      `Thanks for reporting "${title}". Our team will check it out shortly.`,
+      { type: "issue_reported" },
+    );
     const data = await Issue.find({userId: id});
     return res.status(201).json({
       message: "Great! Your issue was created successfully. We appreciate you bringing this to our attention.",

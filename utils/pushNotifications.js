@@ -26,8 +26,22 @@ const sendPushNotification = async (pushToken, title, body, data = {}) => {
     return response;
   } catch (error) {
     console.error("Error sending push notification:", error);
-    throw error;
+    return null;
   }
 };
 
-module.exports = { sendPushNotification };
+/**
+ * Send FCM when the app user has an `expoPushToken`.
+ * @param {{ expoPushToken?: string }} user
+ */
+const sendPushToAppUser = async (user, title, body, data = {}) => {
+  if (
+    !user ||
+    !user.expoPushToken
+  ) {
+    return null;
+  }
+  return sendPushNotification(user.expoPushToken, title, body, data);
+};
+
+module.exports = { sendPushNotification, sendPushToAppUser };

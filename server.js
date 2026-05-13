@@ -46,7 +46,10 @@ const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
 const Notification = require("./models/notification");
-const { sendPushNotification } = require("./utils/pushNotifications");
+const {
+  sendPushNotification,
+  sendPushToAppUser,
+} = require("./utils/pushNotifications");
 
 app.use(express.static("public"));
 app.use(express.json({ limit: "50mb" }));
@@ -639,10 +642,7 @@ io.on("connection", (socket) => {
               console.error("Error creating notification:", err);
             }
 
-            if (
-              providerUser.expoPushToken &&
-              providerUser.isPushNotificationEnabled
-            ) {
+            if (providerUser.expoPushToken) {
               sendPushNotification(
                 providerUser.expoPushToken,
                 "New Consultation Request",
@@ -1379,10 +1379,7 @@ io.on("connection", (socket) => {
           console.error("Error creating notification:", err);
         }
 
-        if (
-          patientUser.expoPushToken &&
-          patientUser.isPushNotificationEnabled
-        ) {
+        if (patientUser.expoPushToken) {
           sendPushNotification(
             patientUser.expoPushToken,
             nextStatus === "payment_pending"
@@ -1564,6 +1561,32 @@ io.on("connection", (socket) => {
             return;
           }
           await request.save();
+          try {
+            const patientUser = await User.findById(
+              request.patientId._id,
+            ).select("expoPushToken fullname");
+            const expiredTitle = "No providers available";
+            const expiredBody =
+              "All matching health providers are busy right now. Please try again later or contact support for help.";
+            await Notification.createNotification({
+              userId: request.patientId._id,
+              type: "request_expired",
+              title: expiredTitle,
+              message: expiredBody,
+              status: "sent",
+              data: { requestId: request._id },
+              priority: "high",
+            });
+            await sendPushToAppUser(patientUser, expiredTitle, expiredBody, {
+              requestId: String(request._id),
+              type: "request_expired",
+            });
+          } catch (notifyErr) {
+            console.error(
+              "Error notifying patient for expired request:",
+              notifyErr,
+            );
+          }
           if (patientSocketId) {
             io.to(patientSocketId).emit("requestUpdated", request);
           }
@@ -1574,6 +1597,8 @@ io.on("connection", (socket) => {
           // Still available to others; no global 'rejected' broadcast
         }
       } else if (request.status === "pending") {
+        const providerDeclineName =
+          request.providerId?.fullname || "The assigned provider";
         // If it was assigned and provider rejected, put back to searching for others (unless none are available)
         request.providerId = undefined;
         if (rejectingProviderIdObj) {
@@ -1596,6 +1621,32 @@ io.on("connection", (socket) => {
         await request.save();
         // Notify rejecting provider to hide
         socket.emit("requestHidden", { requestId: request._id });
+
+        try {
+          const patientUser = await User.findById(
+            request.patientId._id,
+          ).select("expoPushToken fullname");
+          const declineTitle = "Provider declined";
+          const declineBody = `${providerDeclineName} was unable to take your consultation. Another provider may still accept your request.`;
+          await Notification.createNotification({
+            userId: request.patientId._id,
+            type: "consultation_rejected",
+            title: declineTitle,
+            message: declineBody,
+            status: "sent",
+            data: { requestId: request._id },
+            priority: "high",
+          });
+          await sendPushToAppUser(patientUser, declineTitle, declineBody, {
+            requestId: String(request._id),
+            type: "consultation_rejected",
+          });
+        } catch (notifyErr) {
+          console.error(
+            "Error notifying patient after provider decline:",
+            notifyErr,
+          );
+        }
 
         // Notify others there's an available request again, but only to providers matching specializations
         const ailmentCategory = request.ailmentCategoryId;
@@ -1975,10 +2026,7 @@ io.on("connection", (socket) => {
             console.error("Error creating notification:", err);
           }
 
-          if (
-            patientUser.expoPushToken &&
-            patientUser.isPushNotificationEnabled
-          ) {
+          if (patientUser.expoPushToken) {
             sendPushNotification(patientUser.expoPushToken, title, body, {
               requestId: request._id,
             });
@@ -2122,8 +2170,7 @@ io.on("connection", (socket) => {
         const providerUser = await User.findById(request.providerId._id);
         if (
           providerUser &&
-          providerUser.expoPushToken &&
-          providerUser.isPushNotificationEnabled
+          providerUser.expoPushToken
         ) {
           sendPushNotification(
             providerUser.expoPushToken,
@@ -2136,8 +2183,7 @@ io.on("connection", (socket) => {
         const patientUser = await User.findById(request.patientId._id);
         if (
           patientUser &&
-          patientUser.expoPushToken &&
-          patientUser.isPushNotificationEnabled
+          patientUser.expoPushToken
         ) {
           sendPushNotification(
             patientUser.expoPushToken,
@@ -2242,7 +2288,7 @@ schedule.scheduleJob("*/30 * * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+        if (provider.expoPushToken) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expired",
@@ -2329,7 +2375,7 @@ schedule.scheduleJob("0 9 * * *", async () => {
         });
 
         // Send push notification to the user
-        if (provider.expoPushToken && provider.isPushNotificationEnabled) {
+        if (provider.expoPushToken) {
           sendPushNotification(
             provider.expoPushToken,
             "Qualification Expiring Soon",

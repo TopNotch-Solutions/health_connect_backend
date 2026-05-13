@@ -10,9 +10,22 @@ const OTP = require("../../models/otp");
 const LoginAttempt = require("../../models/loginAttempts");
 const Notification = require("../../models/notification");
 const NotificationPortal = require("../../models/notificationPortal");
-const { sendPushNotification } = require("../../utils/pushNotifications");
+const { sendPushNotification, sendPushToAppUser } = require("../../utils/pushNotifications");
 const { appUserToken, loginToken } = require("../../utils/generateJWTToken");
-const sendPushNotifications = require("../../utils/sendPushNotification");
+
+async function sendProfileVerificationPush(userId, fullnameFallback) {
+  const u = await User.findById(userId).select(
+    "fullname expoPushToken",
+  );
+  if (!u) return;
+  const name = u.fullname || fullnameFallback || "there";
+  await sendPushToAppUser(
+    u,
+    "Profile Verification",
+    `Dear ${name}, your profile was updated and is under admin review.`,
+    { type: "alert" },
+  );
+}
 
 exports.registerPatient = async (req, res) => {
   const {
@@ -751,7 +764,6 @@ exports.login = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
-              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -768,7 +780,6 @@ exports.login = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
-              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -825,7 +836,6 @@ exports.userDetails = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
-              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -842,7 +852,6 @@ exports.userDetails = async (req, res) => {
               cellphoneNumber: user.cellphoneNumber,
               userId: user._id,
               gender: user.gender,
-              isPushNotificationEnabled: user.isPushNotificationEnabled,
               nationalId: user.nationalId,
               dateOfBirth: user.dateOfBirth,
               profileImage: user.profileImage,
@@ -977,6 +986,7 @@ exports.updateProfileImage = async (req, res) => {
       status: "sent",
       message: `Dear ${newUser.fullname}, your profile details have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(newUser._id, newUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1243,6 +1253,15 @@ exports.changePassword = async (req, res) => {
 
     existingUser.password = hashedPassword;
     await existingUser.save();
+    const pushTarget = await User.findById(userId).select(
+      "expoPushToken fullname",
+    );
+    await sendPushToAppUser(
+      pushTarget,
+      "Password updated",
+      "Your Health Connect password was changed successfully.",
+      { type: "alert" },
+    );
     res.status(200).json({
       status: true,
       message: "Your password has been changed successfully.",
@@ -1303,6 +1322,7 @@ exports.updateIDFront = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(existingUser._id, existingUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1373,6 +1393,7 @@ exports.updateIDBack = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(existingUser._id, existingUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1451,6 +1472,7 @@ exports.updateFinalQualification = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(existingUser._id, existingUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1530,6 +1552,7 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(existingUser._id, existingUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1609,6 +1632,7 @@ exports.updateHPCNAQualification = async (req, res) => {
       status: "sent",
       message: `Dear ${existingUser.fullname}, your profile detail have been successfully updated and are currently under review by our administrators. You will be notified once the verification process is complete. Thank you for your patience.`,
     });
+    await sendProfileVerificationPush(existingUser._id, existingUser.fullname);
     const allPortalUsers = await NotificationPortal.find();
 
     if (allPortalUsers && allPortalUsers.length > 0) {
@@ -1665,6 +1689,15 @@ exports.deactivateAccount = async (req, res) => {
     }
     existingUser.accountDeactivation = true;
     await existingUser.save();
+    const pushTarget = await User.findById(id).select(
+      "expoPushToken fullname",
+    );
+    await sendPushToAppUser(
+      pushTarget,
+      "Account deactivated",
+      "Your Health Connect account has been deactivated.",
+      { type: "alert" },
+    );
     res.status(200).json({
       status: true,
       message: "Your account has been deactivated successfully.",
@@ -1748,13 +1781,12 @@ exports.approveHealthProviderDocuments = async (req, res) => {
       priority: "high",
     });
 
-    if (existingUser.expoPushToken) {
-      await sendPushNotifications(
-        existingUser.expoPushToken,
-        "Application Update: Document Verification Complete",
-        message
-      );
-    }
+    await sendPushToAppUser(
+      existingUser,
+      "Application Update: Document Verification Complete",
+      message,
+      { type: "alert" },
+    );
 
     res.status(200).json({
       status: true,
@@ -1832,15 +1864,14 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
         rejectionReason: reason,
       },
     });
-    if (existingUser.expoPushToken) {
-      await sendPushNotifications(
-        existingUser.expoPushToken,
-        wasVerified
-          ? "Document Verification Revoked"
-          : "Document Verification Rejected",
-        rejectionMessage
-      );
-    }
+    await sendPushToAppUser(
+      existingUser,
+      wasVerified
+        ? "Document Verification Revoked"
+        : "Document Verification Rejected",
+      rejectionMessage,
+      { type: "alert", rejectionReason: reason },
+    );
     res.status(200).json({
       status: true,
       message: isHealthProvider
@@ -1878,7 +1909,6 @@ exports.updatePushToken = async (req, res) => {
     }
 
     existingUser.expoPushToken = pushToken;
-    existingUser.isPushNotificationEnabled = true;
     await existingUser.save();
 
     res.status(200).json({

@@ -1,7 +1,7 @@
 const Issue = require("../../models/issue");
 const User = require("../../models/user");
 const Notification = require("../../models/notification");
-const sendFirebasePushNotification = require("../../utils/sendPushNotification");
+const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
 const STORE = {
   pending: "Open",
@@ -119,6 +119,27 @@ exports.updateIssueStatus = async (req, res) => {
       issue.status = STORE.in_progress;
       await issue.save();
 
+      const userId = issue.userId?._id ?? issue.userId;
+      const progressTitle = "Issue in progress";
+      const progressMessage = `We're now looking into your report: "${issue.title}".`;
+      await Notification.createNotification({
+        userId,
+        type: "issue_updated",
+        title: progressTitle,
+        message: progressMessage,
+        status: "sent",
+        data: { issueId: String(issue._id) },
+      });
+      const progressPushUser = await User.findById(userId).select(
+        "expoPushToken fullname",
+      );
+      await sendPushToAppUser(
+        progressPushUser,
+        progressTitle,
+        progressMessage,
+        { type: "issue_updated", issueId: String(issue._id) },
+      );
+
       return res.status(200).json({
         status: "SUCCESS",
         message: "Issue is now in progress.",
@@ -153,20 +174,16 @@ exports.updateIssueStatus = async (req, res) => {
         },
       });
 
-      const token =
-        issue.userId?.expoPushToken ??
-        (await User.findById(userId).select("expoPushToken"))?.expoPushToken;
-
-      let firebasePushSent = false;
-      if (token) {
-        const pushResult = await sendFirebasePushNotification(
-          token,
-          title,
-          message,
-          { type: "issue_resolved", issueId: String(issue._id) },
-        );
-        firebasePushSent = Boolean(pushResult);
-      }
+      const pushUser = await User.findById(userId).select(
+        "expoPushToken fullname",
+      );
+      const pushResult = await sendPushToAppUser(
+        pushUser,
+        title,
+        message,
+        { type: "issue_resolved", issueId: String(issue._id) },
+      );
+      const firebasePushSent = Boolean(pushResult);
 
       return res.status(200).json({
         status: "SUCCESS",

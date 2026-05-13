@@ -42,7 +42,7 @@ const sendPushNotifications = async (pushToken, title, body, data = {}) => {
     return response;
   } catch (error) {
     console.error("Push notification error:", error.message);
-    throw error;
+    return null;
   }
 };
 

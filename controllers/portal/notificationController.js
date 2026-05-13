@@ -2,6 +2,7 @@ const NotificationPortal = require("../../models/notificationPortal");
 const PortalUser = require("../../models/userPortal");
 const Notification = require("../../models/notification");
 const User = require("../../models/user");
+const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
 exports.getAllPortalNotifications = async (req, res) => {
   const { id } = req.params;
@@ -131,15 +132,17 @@ exports.sendNotificationToAllUsers = async (req, res) => {
   }
 
   try {
-    // Get all app users
-    const allUsers = await User.find().select('_id');
-    
+    // Get all app users (tokens for optional push delivery)
+    const allUsers = await User.find().select(
+      "_id expoPushToken fullname",
+    );
+
     if (allUsers.length === 0) {
       return res.status(404).json({ message: "No app users found." });
     }
 
     // Create notifications for all users
-    const notifications = allUsers.map(user => ({
+    const notifications = allUsers.map((user) => ({
       userId: user._id,
       type: type || "alert",
       title,
@@ -150,10 +153,22 @@ exports.sendNotificationToAllUsers = async (req, res) => {
     // Insert all notifications
     await Notification.insertMany(notifications);
 
-    res.status(201).json({ 
-      status: true, 
+    const chunkSize = 30;
+    let pushDelivered = 0;
+    for (let i = 0; i < allUsers.length; i += chunkSize) {
+      const slice = allUsers.slice(i, i + chunkSize);
+      const results = await Promise.all(
+        slice.map((u) =>
+          sendPushToAppUser(u, title, message, { type: type || "alert" }),
+        ),
+      );
+      pushDelivered += results.filter(Boolean).length;
+    }
+
+    res.status(201).json({
+      status: true,
       message: `Notification sent successfully to ${allUsers.length} users.`,
-      data: { count: allUsers.length }
+      data: { count: allUsers.length, pushDelivered },
     });
   } catch (error) {
     console.error("Error sending notification to all users:", error);
@@ -192,6 +207,10 @@ exports.sendNotificationToUser = async (req, res) => {
       title,
       message,
       status: "sent",
+    });
+
+    await sendPushToAppUser(user, title, message, {
+      type: type || "alert",
     });
 
     res.status(201).json({ 

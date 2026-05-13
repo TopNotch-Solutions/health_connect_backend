@@ -4,7 +4,7 @@ const Prescription = require("../../models/prescription");
 const ConsultationRequest = require("../../models/request");
 const User = require("../../models/user");
 const Notification = require("../../models/notification");
-const { sendPushNotification } = require("../../utils/pushNotifications");
+const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
 // Helper: delete old image file
 function deleteFile(filename) {
@@ -267,7 +267,9 @@ exports.acceptPrescription = async (req, res) => {
     }
 
     // Notify patient
-    const patient = await User.findById(prescription.patientId);
+    const patient = await User.findById(prescription.patientId).select(
+      "expoPushToken fullname",
+    );
     if (patient) {
       await Notification.create({
         userId: prescription.patientId,
@@ -280,14 +282,15 @@ exports.acceptPrescription = async (req, res) => {
         scheduledFor: new Date(),
         sentAt: new Date(),
       });
-      if (patient.expoPushToken) {
-        await sendPushNotification(
-          patient.expoPushToken,
-          "Prescription Accepted",
-          "Your prescription has been accepted. Medication delivery is on the way.",
-          { prescriptionId: id, requestId: request ? request._id.toString() : null }
-        );
-      }
+      await sendPushToAppUser(
+        patient,
+        "Prescription Accepted",
+        "Your prescription has been accepted. Medication delivery is on the way.",
+        {
+          prescriptionId: id,
+          requestId: request ? String(request._id) : "",
+        },
+      );
     }
 
     return res.status(200).json({
@@ -326,7 +329,9 @@ exports.rejectPrescription = async (req, res) => {
     await prescription.save();
 
     // Notify patient so they can re-upload
-    const patient = await User.findById(prescription.patientId);
+    const patient = await User.findById(prescription.patientId).select(
+      "expoPushToken fullname",
+    );
     if (patient) {
       const reasonText = reason ? " Reason: " + reason : "";
       await Notification.create({
@@ -340,14 +345,12 @@ exports.rejectPrescription = async (req, res) => {
         scheduledFor: new Date(),
         sentAt: new Date(),
       });
-      if (patient.expoPushToken) {
-        await sendPushNotification(
-          patient.expoPushToken,
-          "Prescription Rejected",
-          "Your prescription was rejected." + reasonText,
-          { prescriptionId: id }
-        );
-      }
+      await sendPushToAppUser(
+        patient,
+        "Prescription Rejected",
+        "Your prescription was rejected." + reasonText,
+        { prescriptionId: id },
+      );
     }
 
     // Reset so patient can re-upload
