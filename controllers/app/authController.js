@@ -1731,6 +1731,7 @@ exports.approveHealthProviderDocuments = async (req, res) => {
       "nurse",
       "physiotherapist",
       "social worker",
+      "pharmacist",
     ];
     const isHealthProvider = healthProviderRoles.includes(existingUser.role);
     const isPatient = existingUser.role === "patient";
@@ -1830,6 +1831,7 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
       "nurse",
       "physiotherapist",
       "social worker",
+      "pharmacist",
     ];
     const isHealthProvider = healthProviderRoles.includes(existingUser.role);
     const isPatient = existingUser.role === "patient";
