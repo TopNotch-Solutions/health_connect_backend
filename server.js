@@ -318,6 +318,15 @@ io.on("connection", (socket) => {
     return { latitude, longitude };
   };
 
+  const normalizeRole = (value) => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return onlineUsers[normalized] ? normalized : null;
+  };
+
   const providerCanSeeRequest = (provider, request, providerCoordinates) => {
     const ailmentCategory = request?.ailmentCategoryId;
     if (!providerMatchesAilment(provider, ailmentCategory)) {
@@ -401,41 +410,58 @@ io.on("connection", (socket) => {
   };
 
   socket.on("join", (data) => {
-    const { role, userId } = data;
+    const rawRole = data?.role;
+    const rawUserId = data?.userId;
+    const normalizedRole = normalizeRole(rawRole);
+    const normalizedUserId =
+      rawUserId === undefined || rawUserId === null
+        ? null
+        : String(rawUserId).trim();
 
-    if (role && onlineUsers[role]) {
-      onlineUsers[role].add(socket.id);
-      socket.role = role;
-      socket.userId = userId;
-
-      // Store socket for user if userId provided
-      if (userId) {
-        userSockets.set(userId, socket.id);
-      }
-
-      // Calculate total online users
-      const totalOnline = Object.values(onlineUsers).reduce(
-        (sum, users) => sum + users.size,
-        0,
-      );
-
-      // Emit updated online users count to all clients
-      io.emit("onlineUsersUpdate", {
-        byRole: {
-          patient: onlineUsers.patient.size,
-          doctor: onlineUsers.doctor.size,
-          nurse: onlineUsers.nurse.size,
-          physiotherapist: onlineUsers.physiotherapist.size,
-          "social worker": onlineUsers["social worker"].size,
-          pharmacist: onlineUsers.pharmacist.size,
-        },
-        total: totalOnline,
+    if (!normalizedRole) {
+      console.warn("Socket join rejected due to invalid role", {
+        socketId: socket.id,
+        role: rawRole,
+        userId: rawUserId,
       });
-
-      console.log(
-        `User ${socket.id} joined as ${role}. Total online: ${totalOnline}`,
-      );
+      return;
     }
+
+    onlineUsers[normalizedRole].add(socket.id);
+    socket.role = normalizedRole;
+    socket.userId = normalizedUserId;
+
+    // Store socket for user if userId provided
+    if (normalizedUserId) {
+      userSockets.set(normalizedUserId, socket.id);
+    }
+
+    // Calculate total online users
+    const totalOnline = Object.values(onlineUsers).reduce(
+      (sum, users) => sum + users.size,
+      0,
+    );
+
+    // Emit updated online users count to all clients
+    io.emit("onlineUsersUpdate", {
+      byRole: {
+        patient: onlineUsers.patient.size,
+        doctor: onlineUsers.doctor.size,
+        nurse: onlineUsers.nurse.size,
+        physiotherapist: onlineUsers.physiotherapist.size,
+        "social worker": onlineUsers["social worker"].size,
+        pharmacist: onlineUsers.pharmacist.size,
+      },
+      total: totalOnline,
+    });
+
+    console.log(
+      `User ${socket.id} joined as ${normalizedRole}. Total online: ${totalOnline}`,
+      {
+        userId: normalizedUserId,
+        rawRole,
+      },
+    );
   });
 
   // Create a new consultation request (Patient)
