@@ -1,5 +1,19 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const tls = require("tls");
 const fetch = require("node-fetch");
+
+const smsIntermediateCa = fs.readFileSync(
+  path.join(__dirname, "../certs/connectsms-intermediate.pem")
+);
+
+// ConnectSMS may not send the full certificate chain; include the Thawte
+// intermediate so Linux servers with older CA bundles can verify the leaf cert.
+const smsHttpsAgent = new https.Agent({
+  ca: [...tls.rootCertificates, smsIntermediateCa],
+});
 
 async function callExternalApi(param4, param5) {
   try {
@@ -10,9 +24,9 @@ async function callExternalApi(param4, param5) {
     url.searchParams.append("destination", param4);
     url.searchParams.append("message", param5);
 
-    const response = await fetch(url);
+    const response = await fetch(url, { agent: smsHttpsAgent });
     const text = await response.text();
-    console.log("SMS API response:", text); // optional for debugging
+    console.log("SMS API response:", text);
     return text;
   } catch (error) {
     console.error("Error calling SMS API:", error);
