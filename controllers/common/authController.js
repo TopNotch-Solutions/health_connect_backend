@@ -58,7 +58,7 @@ if (!otpLimit) {
     });
     callExternalApi(
   `+${cellphoneNumber}`,
-  `Your Health Connect verification code is ${otp}. It will expire in 5 minutes. Do not share this code with anyone. Health Connect will never ask for your OTP.`
+  `Dear User \nYour Health Connect verification code is ${otp}. It will expire in 5 minutes.\nDo not share this code with anyone. Health Connect will never ask for your Password or Bank details.`
 );
 
     console.log(`OTP for ${cellphoneNumber} is ${otp}`);

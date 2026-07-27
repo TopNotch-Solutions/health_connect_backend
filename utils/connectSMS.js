@@ -3,7 +3,7 @@ const fetch = require("node-fetch");
 
 async function callExternalApi(param4, param5) {
   try {
-    const url = new URL("https://connectsms.mtc.com.na/api.asmx/SendSMS");
+    const url = new URL(process.env.SMS_API_URL);
     url.searchParams.append("from_number", process.env.SMS_API_SENDERID);
     url.searchParams.append("username", process.env.SMS_API_USERNAME);
     url.searchParams.append("password", process.env.SMS_API_PASSWORD);
