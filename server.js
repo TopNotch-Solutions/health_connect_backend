@@ -696,7 +696,7 @@ io.on("connection", (socket) => {
         patientId: validPatientId,
       })
         .populate("patientId", "fullname cellphoneNumber")
-        .populate("providerId", "fullname cellphoneNumber role")
+        .populate("providerId", "fullname cellphoneNumber role profileImage bio")
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
@@ -942,7 +942,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate({
         path: "ailmentCategoryId",
@@ -1335,7 +1335,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role profileImage",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate("ailmentCategoryId");
 
@@ -1973,7 +1973,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate("ailmentCategoryId");
 
