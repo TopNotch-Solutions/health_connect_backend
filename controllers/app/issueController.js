@@ -71,7 +71,7 @@ exports.createIssue = async (req, res) => {
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly." });
   }
 };
 
@@ -141,9 +141,7 @@ exports.all = async (req, res) => {
   } catch (error) {
     console.error("Error fetching issues:", error);
     res.status(500).json({
-      message: "We're having trouble processing your request. Please try again shortly.",
-      error
-    });
+      message: "We're having trouble processing your request. Please try again shortly." });
   }
 };
 
@@ -154,6 +152,6 @@ exports.getAllIssues = async (req, res) => {
     res.status(200).json({ status: true, issues });
   } catch (error) {
     console.error("Error fetching all issues:", error);
-    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly." });
   }
 };

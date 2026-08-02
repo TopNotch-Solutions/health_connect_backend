@@ -59,8 +59,7 @@ exports.getAllFAQ = async (req, res) => {
   } catch (error) {
     console.error("Error fetching FAQs:", error);
     res.status(500).json({
-      message: "We’re having trouble processing your request. Please try again shortly.",
-      error
+      message: "We’re having trouble processing your request. Please try again shortly.",
     });
   }
 };

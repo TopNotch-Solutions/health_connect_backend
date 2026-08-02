@@ -121,6 +121,18 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Deletion is a one-way anonymisation, not a document removal. Consultation
+  // records, prescriptions and transactions reference this document by id and
+  // must be retained under professional and tax rules, so the document stays
+  // as an anonymous tombstone with every identifying field stripped.
+  accountDeleted: {
+    type: Boolean,
+    default: false,
+  },
+  deletedAt: {
+    type: Date,
+    required: false,
+  },
   isDocumentVerified: {
     type: Boolean,
     default: false,
