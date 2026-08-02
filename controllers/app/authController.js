@@ -194,7 +194,6 @@ The Health Platform Team`,
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -478,7 +477,6 @@ The Health Platform Team`,
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -551,7 +549,6 @@ exports.verifyOtpReset = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -602,7 +599,6 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -628,6 +624,16 @@ exports.login = async (req, res) => {
       return res.status(404).json({
         message:
           "We couldn't sign you in. Please check your username and password, then try again.",
+      });
+    }
+    // Checked before deactivation, since a deleted account is also flagged
+    // deactivated and the deactivation message would wrongly imply it can be
+    // recovered.
+    if (user.accountDeleted) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "This account has been deleted and cannot be recovered. Please register to get started.",
       });
     }
     if (user.accountDeactivation) {
@@ -808,7 +814,6 @@ exports.login = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -891,7 +896,6 @@ exports.userDetails = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -935,7 +939,6 @@ exports.removeProfileImage = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1008,7 +1011,6 @@ exports.updateProfileImage = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1096,7 +1098,6 @@ exports.updatePatientDetails = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1191,7 +1192,6 @@ exports.updateHealthProvider = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1271,7 +1271,6 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1343,7 +1342,6 @@ exports.updateIDFront = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1414,7 +1412,6 @@ exports.updateIDBack = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1493,7 +1490,6 @@ exports.updateFinalQualification = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1574,7 +1570,6 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1653,7 +1648,6 @@ exports.updateHPCNAQualification = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1669,7 +1663,6 @@ exports.getAllAppUsers = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1707,7 +1700,166 @@ exports.deactivateAccount = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
+    });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Account deletion.
+//
+// Required by Google Play, which needs both an in-app deletion path and a
+// public web request route. Deactivation alone does not satisfy it.
+//
+// This is a one-way anonymisation rather than a document removal. Consultation
+// records, prescriptions and transactions all reference the user document by
+// id, and those must be retained under professional (HPCNA) and tax rules —
+// removing the user outright would orphan medical records we are obliged to
+// keep. So the document survives with every identifying field stripped, and
+// the person becomes unfindable and uncontactable.
+//
+// Keep this list in step with docs/privacy-policy.md section 7 and the public
+// deletion page. If a new identifying field is added to the user schema, it
+// must be added here too.
+// ---------------------------------------------------------------------------
+
+// Cleared outright. None of these are required by the schema.
+const IDENTIFYING_FIELDS = [
+  "dateOfBirth",
+  "gender",
+  "address",
+  "bio",
+  "cityTown",
+  "town",
+  "region",
+  "profileImage",
+  "finalQualification",
+  "HPCNAQualification",
+  "idDocumentFront",
+  "idDocumentBack",
+  "expoPushToken",
+  "dispensingCertificateLicence",
+  "trainingCertificate",
+  "NQAEvaluation",
+  "registeredTradingName",
+  "companyRegistrationNo",
+  "businessEmail",
+  "pharmacyCouncilNo",
+  "practiceNumber",
+  "hpcnaCertificate",
+  "settlementCellNumber",
+  "hpcnaNumber",
+  "hpcnaExpiryDate",
+  "operationalZone",
+  "yearsOfExperience",
+  "gpsCoordinates",
+  "hpcnaLicenseExpiryAcknowledged",
+];
+
+// Fields holding an uploaded filename. The files are on disk and must actually
+// be removed, not merely dereferenced.
+const UPLOADED_FILE_FIELDS = [
+  "profileImage",
+  "idDocumentFront",
+  "idDocumentBack",
+  "finalQualification",
+  "HPCNAQualification",
+  "hpcnaCertificate",
+  "dispensingCertificateLicence",
+  "trainingCertificate",
+  "NQAEvaluation",
+];
+
+const UPLOAD_DIR = path.join(__dirname, "../../public/images");
+
+/**
+ * Removes an uploaded file. Uses basename so a stored value can never escape
+ * the upload directory, and treats "already gone" as success.
+ */
+const removeUploadedFile = (storedValue) => {
+  if (!storedValue || typeof storedValue !== "string") return;
+  const name = path.basename(storedValue);
+  if (!name || name === "." || name === "..") return;
+  try {
+    fs.unlinkSync(path.join(UPLOAD_DIR, name));
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn(`[delete-account] could not remove ${name}:`, error.message);
+    }
+  }
+};
+
+exports.deleteAccount = async (req, res) => {
+  const id = req.user.id;
+  if (!id) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "It seems you don't have an account yet. Please register to get started.",
+      });
+    }
+
+    if (user.accountDeleted) {
+      return res.status(409).json({
+        message: "This account has already been deleted.",
+      });
+    }
+
+    // Remove uploaded files before clearing the fields that point at them.
+    for (const field of UPLOADED_FILE_FIELDS) {
+      removeUploadedFile(user[field]);
+    }
+
+    // Required and unique fields cannot simply be cleared, so they get
+    // anonymous values derived from the id — unique per account, and
+    // meaningless. The .invalid TLD is reserved and can never be routed.
+    const token = `deleted-${user._id.toString()}`;
+    const unusablePassword = await bcrypt.hash(
+      `${token}-${Date.now()}-${Math.random()}`,
+      10,
+    );
+
+    const unset = {};
+    for (const field of IDENTIFYING_FIELDS) unset[field] = "";
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          fullname: "Deleted user",
+          email: `${token}@deleted.invalid`,
+          cellphoneNumber: token,
+          verifiedCellphoneNumber: token,
+          nationalId: token,
+          password: unusablePassword,
+          specializations: [],
+          visibility: "Offline",
+          isDocumentVerified: false,
+          isAccountVerified: false,
+          accountDeactivation: true,
+          accountDeleted: true,
+          deletedAt: new Date(),
+        },
+        $unset: unset,
+      },
+    );
+
+    console.log(`[delete-account] account ${user._id} anonymised`);
+
+    return res.status(200).json({
+      status: true,
+      message:
+        "Your account has been deleted. Consultation and payment records are retained only as long as the law requires.",
+    });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    return res.status(500).json({
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
     });
   }
 };
@@ -1801,7 +1953,6 @@ exports.approveHealthProviderDocuments = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1886,7 +2037,6 @@ exports.rejectHealthProviderDocuments = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1922,7 +2072,6 @@ exports.updatePushToken = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -1953,7 +2102,6 @@ exports.logout = async (req, res) => {
     res.status(500).json({
       message:
         "We're having trouble processing your request. Please try again shortly.",
-      error,
     });
   }
 };
@@ -2022,7 +2170,7 @@ exports.updatePharmacyProfile = async (req, res) => {
     });
   } catch (error) {
     console.error("updatePharmacyProfile error:", error);
-    return res.status(500).json({ message: "Server error.", error });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -2062,7 +2210,7 @@ exports.uploadHpcnaCertificate = async (req, res) => {
     });
   } catch (error) {
     console.error("uploadHpcnaCertificate error:", error);
-    return res.status(500).json({ message: "Server error.", error });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -2077,6 +2225,6 @@ exports.getAppToken = (req, res) => {
     return res.status(200).json({ status: true, token });
   } catch (error) {
     console.error("getAppToken error:", error);
-    return res.status(500).json({ message: "Server error.", error });
+    return res.status(500).json({ message: "Server error." });
   }
 };

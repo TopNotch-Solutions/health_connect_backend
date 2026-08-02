@@ -6,6 +6,6 @@ exports.getAllSpecializations = async (req, res) => {
     res.status(200).json({ specializations });
     }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly." });
   }
 };

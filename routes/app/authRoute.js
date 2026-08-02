@@ -15,6 +15,7 @@ const {
   updateHealthProvider,
   changePassword,
   deactivateAccount,
+  deleteAccount,
   getAllAppUsers,
   approveHealthProviderDocuments,
   rejectHealthProviderDocuments,
@@ -50,6 +51,7 @@ authRouter.delete("/remove-profile-image", tokenAuthMiddleware, checkUser, remov
 authRouter.put("/update-patient-details", tokenAuthMiddleware, checkUser, updatePatientDetails);
 authRouter.patch("/change-password", tokenAuthMiddleware, checkUser, changePassword);
 authRouter.patch("/deactivate-account", tokenAuthMiddleware, checkUser, deactivateAccount);
+authRouter.delete("/delete-account", tokenAuthMiddleware, checkUser, deleteAccount);
 authRouter.put("/update-health-provider-details", tokenAuthMiddleware, checkUser, updateHealthProvider);
 authRouter.patch("/upload-profile-image", tokenAuthMiddleware, checkUser, uploadSingle, updateProfileImage);
 authRouter.patch("/update-id-front", tokenAuthMiddleware, checkUser, uploadIdFront.uploadSingleFront, updateIDFront);

@@ -60,9 +60,7 @@ exports.getAllNotification = async (req, res) => {
   } catch (error) {
     console.error("Error fetching notifications:", error);
     res.status(500).json({
-      message: "We’re having trouble processing your request. Please try again shortly.",
-      error
-    });
+      message: "We’re having trouble processing your request. Please try again shortly." });
   }
 };
 
@@ -84,7 +82,7 @@ exports.getUnReadCount = async (req, res) => {
         res.status(200).json({ status: true, data: { unReadCount } });
     }catch (error) {
     console.error("Error registering patient:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly." });
   }
 };
 exports.markNotificationsAsRead = async (req, res) => {
@@ -118,8 +116,7 @@ exports.markNotificationsAsRead = async (req, res) => {
   } catch (error) {
     console.error("Error marking notifications as read:", error);
     res.status(500).json({
-      message: "We’re having trouble processing your request. Please try again shortly.",
-      error,
+      message: "We’re having trouble processing your request. Please try again shortly.",
     });
   }
 };
@@ -142,6 +139,6 @@ exports.deleteNotifications = async (req, res) => {
     res.status(200).json({ status: true, message: "Notification deleted successfully." });
   } catch (error) {
     console.error("Error deleting notifications:", error);
-    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly.", error });
+    res.status(500).json({ message: "We’re having trouble processing your request. Please try again shortly." });
   }
 };
