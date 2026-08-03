@@ -71,6 +71,40 @@ if (!otpLimit) {
   }
 };
 
+exports.checkAccountExists = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+
+  try {
+    const user = await User.findOne({
+      email,
+      accountDeactivation: { $ne: true },
+    }).select("_id email");
+
+    if (!user) {
+      return res.status(200).json({
+        exists: false,
+        message: "No account found with this email.",
+      });
+    }
+
+    return res.status(200).json({
+      exists: true,
+      message: "Account found.",
+    });
+  } catch (error) {
+    console.error("Error checking account:", error);
+    res.status(500).json({
+      message:
+        "We’re having trouble processing your request. Please try again shortly.",
+      error,
+    });
+  }
+};
+
 exports.verifyOtp = async (req, res) => {
   const { cellphoneNumber, otp } = req.body;
 
