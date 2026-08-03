@@ -87,7 +87,7 @@ exports.uploadPrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("uploadPrescription error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -131,7 +131,7 @@ exports.updatePrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("updatePrescription error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -153,7 +153,7 @@ exports.getPrescriptionByRequest = async (req, res) => {
     return res.status(200).json({ prescription });
   } catch (err) {
     console.error("getPrescriptionByRequest error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -168,7 +168,7 @@ exports.getMyPrescriptions = async (req, res) => {
     return res.status(200).json({ prescriptions });
   } catch (err) {
     console.error("getMyPrescriptions error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -196,7 +196,7 @@ exports.cancelPrescription = async (req, res) => {
     return res.status(200).json({ message: "Prescription cancelled.", prescription });
   } catch (err) {
     console.error("cancelPrescription error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -223,7 +223,7 @@ exports.getPharmacistPrescriptions = async (req, res) => {
     return res.status(200).json({ prescriptions });
   } catch (err) {
     console.error("getPharmacistPrescriptions error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -299,7 +299,7 @@ exports.acceptPrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("acceptPrescription error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };
 
@@ -367,6 +367,6 @@ exports.rejectPrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("rejectPrescription error:", err);
-    return res.status(500).json({ message: "Server error.", error: err.message });
+    return res.status(500).json({ message: "Server error." });
   }
 };

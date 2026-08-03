@@ -37,7 +37,7 @@ exports.all = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       status: "ERROR",
-      message: error.message,
+      message: "We're having trouble processing your request. Please try again shortly.",
     });
   }
 };

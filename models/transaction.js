@@ -19,6 +19,15 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    // The REFERENCE sent to PayGate. Unique so a single payment can never be
+    // redeemed twice, and sparse so existing rows without one do not collide.
+    // Doubles as the join key when reconciling against PayGate settlements.
+    dpoReference: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+    },
     type: {
       type: String,
       enum: ["deposit", "withdrawal", "earning", "transfer", "purchase"],

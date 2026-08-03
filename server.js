@@ -2,6 +2,8 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -51,6 +53,40 @@ const {
   sendPushToAppUser,
 } = require("./utils/pushNotifications");
 
+// Security headers. crossOriginResourcePolicy is relaxed because /public
+// serves profile images, prescriptions and certificates that the mobile app
+// and portal load from a different origin.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
+// Behind a proxy/load balancer, express-rate-limit needs the real client IP
+// rather than the proxy's, or every user shares one bucket.
+app.set("trust proxy", 1);
+
+// Broad ceiling for ordinary API traffic.
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please try again shortly." },
+});
+
+// Credential endpoints. skipSuccessfulRequests means only failed attempts
+// count, so a legitimate user on a shared/NAT IP is not locked out by their
+// neighbours while brute force still runs out of budget quickly.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { message: "Too many attempts. Please try again in a few minutes." },
+});
+
 app.use(express.static("public"));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -66,6 +102,13 @@ app.use(
     credentials: true,
   }),
 );
+
+app.use("/api", generalLimiter);
+// Applied before the routers below so it covers login, registration,
+// password reset and OTP.
+app.use("/api/auth", authLimiter);
+app.use("/api/app/auth", authLimiter);
+app.use("/api/portal/auth", authLimiter);
 
 app.use("/api/auth", authRouter);
 app.use("/api/app/auth", authAppRouter);
@@ -696,7 +739,7 @@ io.on("connection", (socket) => {
         patientId: validPatientId,
       })
         .populate("patientId", "fullname cellphoneNumber")
-        .populate("providerId", "fullname cellphoneNumber role")
+        .populate("providerId", "fullname cellphoneNumber role profileImage bio")
         .populate("ailmentCategoryId")
         .sort({ createdAt: -1 });
 
@@ -942,7 +985,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate({
         path: "ailmentCategoryId",
@@ -1335,7 +1378,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role profileImage",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate("ailmentCategoryId");
 
@@ -1973,7 +2016,7 @@ io.on("connection", (socket) => {
       await request.populate("patientId", "fullname cellphoneNumber");
       await request.populate(
         "providerId",
-        "fullname cellphoneNumber role",
+        "fullname cellphoneNumber role profileImage bio",
       );
       await request.populate("ailmentCategoryId");
 

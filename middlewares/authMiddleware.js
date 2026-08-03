@@ -25,13 +25,22 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(400).json({
+    // 401 (not 400) so the app's response interceptor clears the stored
+    // session and returns the user to sign-in. A 400 was silently ignored.
+    res.status(401).json({
       status: "FAILURE",
-      message: "Invalid token.",
+      message:
+        err.name === "TokenExpiredError"
+          ? "Session expired. Please log in again."
+          : "Invalid token.",
     });
   }
 };
 
+// NOTE: this one deliberately keeps returning 400 with "Invalid token.".
+// The app detects exactly that pair to know it should refetch the bootstrap
+// token and retry (see AuthContext login). Changing it would break sign-in
+// for every already-installed version of the app.
 module.exports.appTokenMiddleware = (req, res, next) => {
   const authHeader = req.header('data-access-token');
   if (!authHeader) {
@@ -89,15 +98,17 @@ module.exports.checkUser = (req, res, next) => {
         message: "Access denied. User does not have access to this route.",
       });
     }
-    console.log(req.user)
 
-    req.user = decoded; 
+    req.user = decoded;
 
     next();
   } catch (err) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Invalid token.",
+      message:
+        err.name === "TokenExpiredError"
+          ? "Session expired. Please log in again."
+          : "Invalid token.",
     });
   }
 };
@@ -128,9 +139,8 @@ module.exports.checkAppUser = (req, res, next) => {
         message: "Access denied. User does not have access to this route.",
       });
     }
-    console.log(req.user)
 
-    req.user = decoded; 
+    req.user = decoded;
 
     next();
   } catch (err) {
