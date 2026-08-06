@@ -106,6 +106,14 @@ exports.purchasePackage = async (req, res) => {
     // only for feedback — it carries no authority here.
     const payment = await queryDpoTransaction(payRequestId, reference);
     if (!payment.paid) {
+      // RESULT_DESC alone ("Auth Declined") does not say which decline it was.
+      // The numeric code does, and it is the first thing PayGate support asks
+      // for, so keep it alongside the identifiers needed to look the payment up.
+      console.warn(
+        `[DPO] Not paid — reference ${reference}, payRequestId ${payRequestId}, ` +
+          `TRANSACTION_STATUS ${payment.transactionStatus}, RESULT_CODE ${payment.resultCode}, ` +
+          `RESULT_DESC "${payment.reason}"`,
+      );
       return res.status(402).json({ message: payment.reason || "Payment could not be verified." });
     }
 

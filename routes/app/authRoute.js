@@ -37,7 +37,7 @@ const { uploadSingleBack } = require('../../middlewares/uploadIdBack');
 const { uploadMultiple } = require('../../middlewares/uploadIDDocument');
 const uploadPrescribingCertificate = require('../../middlewares/uploadPrescribingCertificate');
 const { uploadHpcnaCertificate: uploadHpcnaCertificateMiddleware } = require('../../middlewares/uploadHpcnaCertificate');
-const { appTokenMiddleware, checkAppUser, tokenAuthMiddleware, checkUser } = require('../../middlewares/authMiddleware');
+const { appTokenMiddleware, checkAppUser, tokenAuthMiddleware, checkUser, portalAuthMiddleware } = require('../../middlewares/authMiddleware');
 
 const authRouter = Router();
 
@@ -59,9 +59,10 @@ authRouter.patch("/update-id-back", tokenAuthMiddleware, checkUser, uploadSingle
 authRouter.patch("/update-annual-qualification", tokenAuthMiddleware, checkUser, uploadannualQualification.uploadSingleAnnual, updateHPCNAQualification);
 authRouter.patch("/update-primary-qualification", tokenAuthMiddleware, checkUser, uploadprimaryQualification.uploadSinglePrimary, updateFinalQualification);
 authRouter.patch("/update-prescribing-certificate", tokenAuthMiddleware, checkUser, uploadPrescribingCertificate.uploadPrescribingCertificate, updateDispensingCertificateLicence);
-authRouter.get("/all-users", getAllAppUsers);
-authRouter.patch("/approve-documents/:id", approveHealthProviderDocuments);
-authRouter.patch("/reject-documents/:id", rejectHealthProviderDocuments);
+// Admin actions called from the portal — require a portal JWT, not an app one.
+authRouter.get("/all-users", portalAuthMiddleware, getAllAppUsers);
+authRouter.patch("/approve-documents/:id", portalAuthMiddleware, approveHealthProviderDocuments);
+authRouter.patch("/reject-documents/:id", portalAuthMiddleware, rejectHealthProviderDocuments);
 authRouter.patch("/update-push-token", tokenAuthMiddleware, checkUser, updatePushToken);
 authRouter.patch("/logout", tokenAuthMiddleware, checkUser, logout);
 

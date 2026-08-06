@@ -110,6 +110,14 @@ app.use("/api/auth", authLimiter);
 app.use("/api/app/auth", authLimiter);
 app.use("/api/portal/auth", authLimiter);
 
+// Every portal route requires a portal JWT except login itself. This sits
+// above all /api/portal mounts so nothing can be added below it unguarded.
+const { portalAuthMiddleware } = require("./middlewares/authMiddleware");
+app.use("/api/portal", (req, res, next) => {
+  if (req.path === "/auth/login" && req.method === "POST") return next();
+  return portalAuthMiddleware(req, res, next);
+});
+
 app.use("/api/auth", authRouter);
 app.use("/api/app/auth", authAppRouter);
 app.use("/api/app/issue", issueAppRouter);

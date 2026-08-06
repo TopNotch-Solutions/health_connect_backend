@@ -7,6 +7,7 @@ const issueRouter = Router();
 
 issueRouter.post('/create-issue',tokenAuthMiddleware,checkUser, uploadIssueImage.uploadIssueImage, createIssue);
 issueRouter.get('/all-issues',tokenAuthMiddleware,checkUser, all);
-issueRouter.get('/all-issues',getAllIssues);
+// Removed: a second unauthenticated registration of '/all-issues' (getAllIssues)
+// was dead code — Express only ever reached the authenticated route above.
 
 module.exports = issueRouter;
