@@ -4,6 +4,7 @@ const User = require("../../models/user");
 const { isValidCellphoneNumber } = require("../../utils/cellphoneNumberValidation");
 const { validatePassword } = require("../../utils/validatePassword");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path")
 
@@ -211,10 +212,25 @@ exports.login = async (req, res) => {
       );
       loginAttempt = await LoginAttemptPortalUser.create({ userId: user._id, attempts: 0 });
     }
+    // The portal flag is what portalAuthMiddleware checks — without it a
+    // mobile-app token (signed with the fallback secret) could reach admin
+    // routes.
+    const token = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,
+        permissions: user.permissions,
+        portal: true,
+      },
+      process.env.PORTAL_TOKEN || process.env.MOBILE_TOKEN,
+      { expiresIn: "8h" },
+    );
+
      return res.status(200).json({
       status: true,
       message: "You have logged in successfully.",
-      user
+      user,
+      token
     });
   }catch (error) {
     console.error("Error registering patient:", error);
