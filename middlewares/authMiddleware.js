@@ -2,8 +2,25 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 
+const extractToken = (authHeader) => {
+  if (!authHeader) return null;
+  const parts = authHeader.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  return parts[1];
+};
+
+const getHeader = (req, ...names) => {
+  for (const name of names) {
+    const val = req.header(name);
+    if (val) return val;
+  }
+  return undefined;
+};
+
 module.exports.tokenAuthMiddleware = (req, res, next) => {
-  const authHeader = req.header('x-access-token');
+  const authHeader = getHeader(req, 'x-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
@@ -11,7 +28,7 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = extractToken(authHeader);
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
@@ -42,7 +59,7 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
 // token and retry (see AuthContext login). Changing it would break sign-in
 // for every already-installed version of the app.
 module.exports.appTokenMiddleware = (req, res, next) => {
-  const authHeader = req.header('data-access-token');
+  const authHeader = getHeader(req, 'data-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
@@ -50,7 +67,7 @@ module.exports.appTokenMiddleware = (req, res, next) => {
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = extractToken(authHeader);
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
@@ -77,7 +94,7 @@ module.exports.appTokenMiddleware = (req, res, next) => {
 // signing secret, falling back to MOBILE_TOKEN so no new env var is
 // strictly required to deploy.
 module.exports.portalAuthMiddleware = (req, res, next) => {
-  const authHeader = req.header('x-access-token');
+  const authHeader = getHeader(req, 'x-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
@@ -85,7 +102,7 @@ module.exports.portalAuthMiddleware = (req, res, next) => {
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = extractToken(authHeader);
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
@@ -121,7 +138,7 @@ module.exports.portalAuthMiddleware = (req, res, next) => {
 };
 
 module.exports.checkUser = (req, res, next) => {
-  const authHeader = req.header('x-access-token');
+  const authHeader = getHeader(req, 'x-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
@@ -129,7 +146,7 @@ module.exports.checkUser = (req, res, next) => {
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = extractToken(authHeader);
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
@@ -162,7 +179,7 @@ module.exports.checkUser = (req, res, next) => {
 };
 
 module.exports.checkAppUser = (req, res, next) => {
-  const authHeader = req.header('data-access-token');
+  const authHeader = getHeader(req, 'data-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
@@ -170,7 +187,7 @@ module.exports.checkAppUser = (req, res, next) => {
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = extractToken(authHeader);
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
