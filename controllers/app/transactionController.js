@@ -182,6 +182,58 @@ exports.fundSomeonesWallet = async (req, res) => walletNotImplemented(res);
 exports.wallet2Wallet = async (req, res) => walletNotImplemented(res);
 
 exports.withdrawal = async (req, res) => walletNotImplemented(res);
+
+/**
+ * Ensure completed consultations have matching earning ledger rows so they
+ * appear in Account "Recent activity". Idempotent via dpoReference.
+ */
+async function syncEarningTransactionsForProvider(providerId) {
+  const completedRequests = await ConsultationRequest.find({
+    providerId,
+    status: "completed",
+    consultationCost: { $gt: 0 },
+  })
+    .select("_id consultationCost timeline updatedAt createdAt")
+    .lean();
+
+  if (!completedRequests.length) return;
+
+  const refs = completedRequests.map((r) => `earning:${r._id.toString()}`);
+  const existing = await Transaction.find({
+    dpoReference: { $in: refs },
+  })
+    .select("dpoReference")
+    .lean();
+  const existingRefs = new Set(existing.map((t) => t.dpoReference));
+
+  const toCreate = completedRequests
+    .filter((r) => !existingRefs.has(`earning:${r._id.toString()}`))
+    .map((r) => ({
+      userId: providerId,
+      amount: r.consultationCost,
+      time:
+        r.timeline?.consultationCompleted ||
+        r.updatedAt ||
+        r.createdAt ||
+        new Date(),
+      referrence: `earning:${r._id.toString()}`,
+      dpoReference: `earning:${r._id.toString()}`,
+      type: "earning",
+      status: "completed",
+    }));
+
+  if (toCreate.length) {
+    try {
+      await Transaction.insertMany(toCreate, { ordered: false });
+    } catch (err) {
+      // Ignore duplicate-key races from concurrent syncs
+      if (err?.code !== 11000 && !err?.writeErrors) {
+        throw err;
+      }
+    }
+  }
+}
+
 exports.all = async (req, res) => {
   const id = req.user.id;
   const { page = 1, limit = 10 } = req.query;
@@ -201,6 +253,10 @@ exports.all = async (req, res) => {
         message: "Page and limit must be positive numbers" 
       });
     }
+
+    // Backfill earning rows for completed consults (covers history before
+    // Transaction.create on complete was added).
+    await syncEarningTransactionsForProvider(id);
 
     // Calculate skip value for pagination
     const skip = (pageNumber - 1) * limitNumber;
