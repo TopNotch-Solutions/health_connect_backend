@@ -173,9 +173,32 @@ setSocketData(
   () => userSockets,
 );
 
+const buildOnlineUsersUpdate = () => {
+  const totalOnline = Object.values(onlineUsers).reduce(
+    (sum, users) => sum + users.size,
+    0,
+  );
+  return {
+    byRole: {
+      patient: onlineUsers.patient.size,
+      doctor: onlineUsers.doctor.size,
+      nurse: onlineUsers.nurse.size,
+      physiotherapist: onlineUsers.physiotherapist.size,
+      "social worker": onlineUsers["social worker"].size,
+      pharmacist: onlineUsers.pharmacist.size,
+    },
+    total: totalOnline,
+    // Connected user IDs — source of truth for Online/Offline status
+    onlineUserIds: Array.from(userSockets.keys()),
+  };
+};
+
 // Socket.io connection handling
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
+
+  // Send current presence snapshot so admin UI can sync Online/Offline immediately
+  socket.emit("onlineUsersUpdate", buildOnlineUsersUpdate());
 
   // Handle user joining with a role
   // Helper function to check if a provider matches an ailment category based on specializations
@@ -487,27 +510,11 @@ io.on("connection", (socket) => {
       userSockets.set(normalizedUserId, socket.id);
     }
 
-    // Calculate total online users
-    const totalOnline = Object.values(onlineUsers).reduce(
-      (sum, users) => sum + users.size,
-      0,
-    );
-
-    // Emit updated online users count to all clients
-    io.emit("onlineUsersUpdate", {
-      byRole: {
-        patient: onlineUsers.patient.size,
-        doctor: onlineUsers.doctor.size,
-        nurse: onlineUsers.nurse.size,
-        physiotherapist: onlineUsers.physiotherapist.size,
-        "social worker": onlineUsers["social worker"].size,
-        pharmacist: onlineUsers.pharmacist.size,
-      },
-      total: totalOnline,
-    });
+    const update = buildOnlineUsersUpdate();
+    io.emit("onlineUsersUpdate", update);
 
     console.log(
-      `User ${socket.id} joined as ${normalizedRole}. Total online: ${totalOnline}`,
+      `User ${socket.id} joined as ${normalizedRole}. Total online: ${update.total}`,
       {
         userId: normalizedUserId,
         rawRole,
@@ -2307,27 +2314,11 @@ io.on("connection", (socket) => {
         userSockets.delete(socket.userId);
       }
 
-      // Calculate total online users
-      const totalOnline = Object.values(onlineUsers).reduce(
-        (sum, users) => sum + users.size,
-        0,
-      );
-
-      // Emit updated online users count to all clients
-      io.emit("onlineUsersUpdate", {
-        byRole: {
-          patient: onlineUsers.patient.size,
-          doctor: onlineUsers.doctor.size,
-          nurse: onlineUsers.nurse.size,
-          physiotherapist: onlineUsers.physiotherapist.size,
-          "social worker": onlineUsers["social worker"].size,
-          pharmacist: onlineUsers.pharmacist.size,
-        },
-        total: totalOnline,
-      });
+      const update = buildOnlineUsersUpdate();
+      io.emit("onlineUsersUpdate", update);
 
       console.log(
-        `User ${socket.id} disconnected. Total online: ${totalOnline}`,
+        `User ${socket.id} disconnected. Total online: ${update.total}`,
       );
     }
   });

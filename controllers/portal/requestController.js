@@ -10,6 +10,17 @@ exports.setSocketData = (onlineUsersFn, userSocketsFn) => {
   getUserSocketsData = userSocketsFn;
 };
 
+/** Returns the live userId → socketId map, or null if sockets are not wired yet. */
+exports.getUserSockets = () =>
+  getUserSocketsData ? getUserSocketsData() : null;
+
+/** True when the given userId currently has an active socket connection. */
+exports.isUserOnline = (userId) => {
+  if (!userId || !getUserSocketsData) return false;
+  const userSockets = getUserSocketsData();
+  return userSockets.has(String(userId));
+};
+
 exports.getRequestStats = async (req, res) => {
   try {
     // Get request statistics
@@ -109,6 +120,43 @@ exports.getRequestStats = async (req, res) => {
       status: false,
       message: "We're having trouble processing your request. Please try again shortly.", 
       error: error.message 
+    });
+  }
+};
+
+exports.getRequestById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const request = await ConsultationRequest.findById(id)
+      .populate(
+        "patientId",
+        "fullname cellphoneNumber email dateOfBirth gender address cityTown town region nationalId profileImage role",
+      )
+      .populate(
+        "providerId",
+        "fullname cellphoneNumber email role specializations yearsOfExperience hpcnaNumber operationalZone address cityTown town region profileImage bio finalQualification",
+      )
+      .populate(
+        "ailmentCategoryId",
+        "title description provider teleconsultationCost physicalconsultationCost supportsTeleconsultation",
+      );
+
+    if (!request) {
+      return res.status(404).json({
+        status: false,
+        message: "Consultation request not found.",
+      });
+    }
+
+    res.status(200).json({ status: true, request });
+  } catch (error) {
+    console.error("Error fetching request by id:", error);
+    res.status(500).json({
+      status: false,
+      message:
+        "We're having trouble processing your request. Please try again shortly.",
+      error: error.message,
     });
   }
 };

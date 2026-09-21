@@ -12,6 +12,7 @@ const Notification = require("../../models/notification");
 const NotificationPortal = require("../../models/notificationPortal");
 const { sendPushNotification, sendPushToAppUser } = require("../../utils/pushNotifications");
 const { appUserToken, loginToken } = require("../../utils/generateJWTToken");
+const { isUserOnline } = require("../portal/requestController");
 
 async function sendProfileVerificationPush(userId, fullnameFallback) {
   const u = await User.findById(userId).select(
@@ -1656,8 +1657,16 @@ exports.getAllAppUsers = async (req, res) => {
   try {
     const users = await User.find()
       .select("-password -verifiedCellphoneNumber")
-      .sort({ createdAt: -1 });
-    res.status(200).json({ status: true, users });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Visibility comes from live socket presence: connected userId → Online
+    const usersWithPresence = users.map((user) => ({
+      ...user,
+      visibility: isUserOnline(user._id) ? "Online" : "Offline",
+    }));
+
+    res.status(200).json({ status: true, users: usersWithPresence });
   } catch (error) {
     console.error("Error fetching app users:", error);
     res.status(500).json({
