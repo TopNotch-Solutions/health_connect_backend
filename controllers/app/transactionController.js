@@ -1,5 +1,6 @@
 const Package = require("../../models/packages");
 const Transaction = require("../../models/transaction");
+const ConsultationRequest = require("../../models/request");
 const User = require("../../models/user");
 const generateTransactionReference = require("../../utils/referrenceGenerator");
 const { initiateDpoPayment, queryDpoTransaction } = require("../../utils/dpoPayment");
@@ -271,22 +272,35 @@ exports.allEarnings = async (req, res) => {
       999
     );
 
-    const result = await Transaction.aggregate([
+    // Sum completed consultation fees for this provider this month.
+    // Prefer timeline.consultationCompleted; fall back to updatedAt for older rows.
+    const result = await ConsultationRequest.aggregate([
       {
         $match: {
-          userId: new mongoose.Types.ObjectId(id),
-          type: "earning",
+          providerId: new mongoose.Types.ObjectId(id),
           status: "completed",
-          time: {
-            $gte: startOfMonth,
-            $lte: endOfMonth,
-          },
+          consultationCost: { $gt: 0 },
+          $or: [
+            {
+              "timeline.consultationCompleted": {
+                $gte: startOfMonth,
+                $lte: endOfMonth,
+              },
+            },
+            {
+              "timeline.consultationCompleted": { $exists: false },
+              updatedAt: {
+                $gte: startOfMonth,
+                $lte: endOfMonth,
+              },
+            },
+          ],
         },
       },
       {
         $group: {
           _id: null,
-          totalAmount: { $sum: "$amount" },
+          totalAmount: { $sum: "$consultationCost" },
         },
       },
     ]);

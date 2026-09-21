@@ -2034,6 +2034,23 @@ io.on("connection", (socket) => {
           provider.consultations = provider.consultations - 1;
 
                  await provider.save();
+
+          // Record provider earning once per request (ledger + home "this month")
+          const earningRef = `earning:${request._id.toString()}`;
+          const existingEarning = await Transaction.findOne({
+            dpoReference: earningRef,
+          });
+          if (!existingEarning && request.consultationCost > 0) {
+            await Transaction.create({
+              userId: request.providerId._id,
+              amount: request.consultationCost,
+              time: new Date(),
+              referrence: earningRef,
+              dpoReference: earningRef,
+              type: "earning",
+              status: "completed",
+            });
+          }
       }
 
       // Notify patient using _id
