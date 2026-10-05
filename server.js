@@ -552,20 +552,11 @@ io.on("connection", (socket) => {
       // Convert patientId to ObjectId (patientId is always a valid ObjectId)
       const validPatientId = new mongoose.Types.ObjectId(patientId);
 
-      // Verify patient's document is verified before allowing consultation request
       const patient = await User.findById(validPatientId);
       if (!patient) {
         socket.emit("requestError", {
           error:
             "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
-        });
-        return;
-      }
-
-      if (!patient.isDocumentVerified) {
-        socket.emit("requestError", {
-          error:
-            "Your account is pending verification. Please wait for our admin team to verify your information before requesting a consultation. We'll notify you once your account has been verified. If verification is taking too long, you can log a ticket in the issues section.",
         });
         return;
       }
@@ -2324,72 +2315,72 @@ io.on("connection", (socket) => {
   });
 });
 
-schedule.scheduleJob("*/30 * * * *", async () => {
+schedule.scheduleJob("0 */6 * * *", async () => {
   console.log(
-    "Running task every 30 minutes - Checking for expired qualifications...",
+    "Running task every 6 hours - Checking for expired HPCNA qualifications...",
   );
 
   try {
     const currentDate = new Date();
 
-    // Find all health providers with specific roles
+    // All providers with an HPCNA expiry date (exclude patients)
     const healthProviders = await User.find({
-      role: { $in: ["doctor", "nurse", "physiotherapist", "social worker"] },
-      hpcnaExpiryDate: { $exists: true, $ne: null },
+      role: {
+        $in: [
+          "doctor",
+          "nurse",
+          "physiotherapist",
+          "social worker",
+          "pharmacist",
+        ],
+      },
+      hpcnaExpiryDate: { $exists: true, $ne: null, $lt: currentDate },
+      isDocumentVerified: true,
     });
 
     let expiredCount = 0;
 
     for (const provider of healthProviders) {
-      // Check if hpcnaExpiryDate has expired
-      if (
-        provider.hpcnaExpiryDate < currentDate &&
-        provider.isDocumentVerified
-      ) {
-        // Update isDocumentVerified to false
-        provider.isDocumentVerified = false;
-        await provider.save();
+      provider.isDocumentVerified = false;
+      await provider.save();
 
-        expiredCount++;
+      expiredCount++;
 
-        // Create notification in database
-        await Notification.createNotification({
-          userId: provider._id,
-          type: "qualification_expired",
-          title: "Qualification Expired",
-          message:
-            "Your qualification has expired. Please renew your qualification to continue using our services.",
-          data: {
-            expiryDate: provider.hpcnaExpiryDate,
-            role: provider.role,
-          },
-          priority: "high",
-          channels: {
-            inApp: true,
-            push: true,
-            email: false,
-            sms: false,
-          },
-        });
+      await Notification.createNotification({
+        userId: provider._id,
+        type: "qualification_expired",
+        title: "Qualification Expired",
+        message:
+          "Your qualification has expired. Please renew your qualification to continue using our services.",
+        data: {
+          expiryDate: provider.hpcnaExpiryDate,
+          role: provider.role,
+        },
+        priority: "high",
+        channels: {
+          inApp: true,
+          push: true,
+          email: false,
+          sms: false,
+        },
+      });
 
-        // Send push notification to the user
-        if (provider.expoPushToken) {
-          sendPushNotification(
-            provider.expoPushToken,
-            "Qualification Expired",
-            "Your qualification has expired. Please renew your qualification to continue using our services.",
-            { type: "qualification_expired" },
-          );
-        }
-
-        console.log(
-          `Qualification expired for user: ${provider.fullname} (${provider._id})`,
+      if (provider.expoPushToken) {
+        sendPushNotification(
+          provider.expoPushToken,
+          "Qualification Expired",
+          "Your qualification has expired. Please renew your qualification to continue using our services.",
+          { type: "qualification_expired" },
         );
       }
+
+      console.log(
+        `Qualification expired for user: ${provider.fullname} (${provider._id})`,
+      );
     }
 
     console.log(
-      `Task completed. Found ${expiredCount} expired qualifications out of ${healthProviders.length} health providers.`,
+      `Task completed. Found ${expiredCount} expired qualifications.`,
     );
   } catch (error) {
     console.error("Error checking expired qualifications:", error);
@@ -2416,7 +2407,7 @@ schedule.scheduleJob("0 9 * * *", async () => {
 
     // Find all health providers with qualifications expiring in 7 days
     const healthProviders = await User.find({
-      role: { $in: ["doctor", "nurse", "physiotherapist", "social worker"] },
+      role: { $in: ["doctor", "nurse", "physiotherapist", "social worker", "pharmacist"] },
       hpcnaExpiryDate: {
         $gte: startOfDay,
         $lte: endOfDay,
