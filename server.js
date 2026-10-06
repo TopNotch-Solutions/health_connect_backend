@@ -561,6 +561,14 @@ io.on("connection", (socket) => {
         return;
       }
 
+      if (!patient.isDocumentVerified) {
+        socket.emit("requestError", {
+          error:
+            "Your account is still under review. You cannot request a consultation until your documents have been verified by our administrative team. We'll notify you once verification is complete. If this is taking too long, please log a ticket in the issues section so we can assist you.",
+        });
+        return;
+      }
+
       // Enforce single active request per patient
       const existingActive = await ConsultationRequest.findOne({
         patientId: validPatientId,

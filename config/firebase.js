@@ -36,7 +36,7 @@ if (fs.existsSync(serviceAccountPath)) {
 }
 
 if (!firebaseEnabled) {
-  module.exports = {
+  const disabledAdmin = {
     messaging() {
       return {
         async send() {
@@ -48,6 +48,9 @@ if (!firebaseEnabled) {
       };
     },
   };
+  disabledAdmin.__firebaseEnabled = false;
+  module.exports = disabledAdmin;
 } else {
+  admin.__firebaseEnabled = true;
   module.exports = admin;
 }
