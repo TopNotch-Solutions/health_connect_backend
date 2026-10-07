@@ -7,7 +7,6 @@ const Notification = require("../../models/notification");
 const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
 const PROVIDER_ISSUED_ACTIVE_STATUSES = [
-  "arrived",
   "in_progress",
   "in_call",
 ];
@@ -81,7 +80,7 @@ function canEditProviderPrescription(request) {
   return {
     allowed: false,
     reason:
-      "Prescriptions can only be uploaded during an active consultation or within 24 hours after completion.",
+      "Prescriptions can only be uploaded after the consultation has started, or within 24 hours after completion.",
   };
 }
 
