@@ -8,78 +8,113 @@ const {
   getPharmacistPrescriptions,
   acceptPrescription,
   rejectPrescription,
+  uploadProviderPrescription,
+  updateProviderPrescription,
 } = require("../../controllers/app/prescriptionController");
-const { uploadPrescription: uploadMiddleware } = require("../../middlewares/uploadPrescription");
-const { tokenAuthMiddleware, checkUser } = require("../../middlewares/authMiddleware");
+const {
+  uploadPrescription: uploadMiddleware,
+} = require("../../middlewares/uploadPrescription");
+const {
+  tokenAuthMiddleware,
+  checkUser,
+} = require("../../middlewares/authMiddleware");
 
 const prescriptionRouter = Router();
 
+function handleMulterError(err, req, res, next) {
+  if (!err) {
+    next();
+    return;
+  }
+  if (err instanceof Error && err.message) {
+    return res.status(400).json({ message: err.message });
+  }
+  return res.status(400).json({ message: "Invalid prescription upload." });
+}
+
+// ── Provider clinical prescription routes (before /:id) ───────────────────────
+prescriptionRouter.post(
+  "/provider",
+  tokenAuthMiddleware,
+  checkUser,
+  (req, res, next) => {
+    uploadMiddleware(req, res, (err) => handleMulterError(err, req, res, next));
+  },
+  uploadProviderPrescription,
+);
+
+prescriptionRouter.patch(
+  "/provider/:id",
+  tokenAuthMiddleware,
+  checkUser,
+  (req, res, next) => {
+    uploadMiddleware(req, res, (err) => handleMulterError(err, req, res, next));
+  },
+  updateProviderPrescription,
+);
+
 // ── Patient routes ────────────────────────────────────────────────────────────
-// Upload new prescription for a request
 prescriptionRouter.post(
   "/",
   tokenAuthMiddleware,
   checkUser,
-  uploadMiddleware,
-  uploadPrescription
+  (req, res, next) => {
+    uploadMiddleware(req, res, (err) => handleMulterError(err, req, res, next));
+  },
+  uploadPrescription,
 );
 
-// Replace existing prescription image (edit while pending_review)
 prescriptionRouter.patch(
   "/:id",
   tokenAuthMiddleware,
   checkUser,
-  uploadMiddleware,
-  updatePrescription
+  (req, res, next) => {
+    uploadMiddleware(req, res, (err) => handleMulterError(err, req, res, next));
+  },
+  updatePrescription,
 );
 
-// Get prescription by requestId
 prescriptionRouter.get(
   "/by-request/:requestId",
   tokenAuthMiddleware,
   checkUser,
-  getPrescriptionByRequest
+  getPrescriptionByRequest,
 );
 
-// Get all my prescriptions (patient)
 prescriptionRouter.get(
   "/mine",
   tokenAuthMiddleware,
   checkUser,
-  getMyPrescriptions
+  getMyPrescriptions,
 );
 
-// Cancel prescription
 prescriptionRouter.patch(
   "/:id/cancel",
   tokenAuthMiddleware,
   checkUser,
-  cancelPrescription
+  cancelPrescription,
 );
 
 // ── Pharmacist routes ─────────────────────────────────────────────────────────
-// Get all prescriptions for review
 prescriptionRouter.get(
   "/pharmacist/all",
   tokenAuthMiddleware,
   checkUser,
-  getPharmacistPrescriptions
+  getPharmacistPrescriptions,
 );
 
-// Accept prescription → starts delivery
 prescriptionRouter.patch(
   "/:id/accept",
   tokenAuthMiddleware,
   checkUser,
-  acceptPrescription
+  acceptPrescription,
 );
 
-// Reject prescription
 prescriptionRouter.patch(
   "/:id/reject",
   tokenAuthMiddleware,
   checkUser,
-  rejectPrescription
+  rejectPrescription,
 );
 
 module.exports = prescriptionRouter;

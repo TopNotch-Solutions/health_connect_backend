@@ -13,12 +13,25 @@ const prescriptionSchema = new mongoose.Schema(
       ref: "user",
       required: true,
     },
-    // Set when a pharmacist accepts the prescription
+    // Set when a pharmacist accepts the prescription (pharmacy flow)
     pharmacistId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "user",
       required: false,
       default: null,
+    },
+    // Doctor / prescribing nurse who issued a clinical prescription
+    issuerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: false,
+      default: null,
+    },
+    // Distinguishes pharmacy patient-upload vs provider-issued clinical Rx
+    source: {
+      type: String,
+      enum: ["patient_pharmacy", "provider_issued"],
+      default: "patient_pharmacy",
     },
     // Stored filename (in public/images)
     prescriptionImage: {
@@ -37,10 +50,11 @@ const prescriptionSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "pending_review",  // Uploaded by patient, awaiting pharmacist review
-        "accepted",        // Pharmacist accepted — delivery starts
-        "rejected",        // Pharmacist rejected — patient can re-upload or cancel
-        "cancelled",       // Patient cancelled the whole request
+        "pending_review", // Uploaded by patient, awaiting pharmacist review
+        "accepted", // Pharmacist accepted — delivery starts
+        "rejected", // Pharmacist rejected — patient can re-upload or cancel
+        "cancelled", // Patient cancelled the whole request
+        "issued", // Doctor / prescribing nurse issued clinical Rx
       ],
       default: "pending_review",
     },
@@ -53,12 +67,13 @@ const prescriptionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 prescriptionSchema.index({ requestId: 1 }, { unique: true });
 prescriptionSchema.index({ patientId: 1, status: 1 });
 prescriptionSchema.index({ pharmacistId: 1, status: 1 });
+prescriptionSchema.index({ issuerId: 1, source: 1 });
 
 const Prescription = mongoose.model("Prescription", prescriptionSchema);
 module.exports = Prescription;

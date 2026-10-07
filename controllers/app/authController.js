@@ -807,6 +807,7 @@ exports.login = async (req, res) => {
               finalQualification: user.finalQualification,
               idDocumentFront: user.idDocumentFront,
               idDocumentBack: user.idDocumentBack,
+              dispensingCertificateLicence: user.dispensingCertificateLicence,
               token: getJwtToken,
             },
     });
@@ -878,6 +879,7 @@ exports.userDetails = async (req, res) => {
               finalQualification: user.finalQualification,
               idDocumentFront: user.idDocumentFront,
               idDocumentBack: user.idDocumentBack,
+              dispensingCertificateLicence: user.dispensingCertificateLicence,
               consultations: user.consultations,
               // ── Pharmacist-specific fields ─────────────────────────────
               registeredTradingName: user.registeredTradingName,
@@ -1565,6 +1567,7 @@ exports.updateDispensingCertificateLicence = async (req, res) => {
       status: true,
       message:
         "Your dispensing certificate licence has been updated successfully",
+      dispensingCertificateLicence: existingUser.dispensingCertificateLicence,
     });
   } catch (error) {
     console.error("Error registering patient:", error);

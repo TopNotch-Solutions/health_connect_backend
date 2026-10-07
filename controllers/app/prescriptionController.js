@@ -6,6 +6,14 @@ const User = require("../../models/user");
 const Notification = require("../../models/notification");
 const { sendPushToAppUser } = require("../../utils/pushNotifications");
 
+const PROVIDER_ISSUED_ACTIVE_STATUSES = [
+  "arrived",
+  "in_progress",
+  "in_call",
+];
+
+const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 // Helper: delete old image file
 function deleteFile(filename) {
   if (!filename) return;
@@ -22,6 +30,101 @@ function getFileType(filename) {
   if (!filename) return null;
   const ext = path.extname(filename).toLowerCase();
   return ext === ".pdf" ? "pdf" : "image";
+}
+
+function canIssuePrescription(user) {
+  if (!user) return false;
+  if (user.role === "doctor") return true;
+  if (user.role === "nurse" && user.dispensingCertificateLicence) return true;
+  return false;
+}
+
+function getRequestCompletedAt(request) {
+  if (request?.timeline?.consultationCompleted) {
+    return new Date(request.timeline.consultationCompleted);
+  }
+  if (request?.updatedAt) {
+    return new Date(request.updatedAt);
+  }
+  return null;
+}
+
+function canEditProviderPrescription(request) {
+  if (!request) {
+    return { allowed: false, reason: "Request not found." };
+  }
+
+  if (PROVIDER_ISSUED_ACTIVE_STATUSES.includes(request.status)) {
+    return { allowed: true };
+  }
+
+  if (request.status === "completed") {
+    const completedAt = getRequestCompletedAt(request);
+    if (!completedAt || Number.isNaN(completedAt.getTime())) {
+      return {
+        allowed: false,
+        reason:
+          "Consultation completion time is missing. Prescription can no longer be updated.",
+      };
+    }
+    const deadline = completedAt.getTime() + EDIT_WINDOW_MS;
+    if (Date.now() <= deadline) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason:
+        "The 24-hour window to upload or update a prescription after consultation completion has expired.",
+    };
+  }
+
+  return {
+    allowed: false,
+    reason:
+      "Prescriptions can only be uploaded during an active consultation or within 24 hours after completion.",
+  };
+}
+
+async function notifyPatientOfProviderPrescription({
+  patientId,
+  prescriptionId,
+  requestId,
+  isUpdate,
+}) {
+  const patient = await User.findById(patientId).select(
+    "expoPushToken fullname",
+  );
+  if (!patient) return;
+
+  const title = isUpdate ? "Prescription Updated" : "Prescription Available";
+  const message = isUpdate
+    ? "Your healthcare provider updated your prescription. You can download it in the app."
+    : "Your healthcare provider uploaded a prescription. You can download it in the app.";
+
+  try {
+    await Notification.create({
+      userId: patientId,
+      type: "alert",
+      title,
+      message,
+      status: "sent",
+      channels: { inApp: true, push: true, email: false, sms: false },
+      priority: "high",
+      scheduledFor: new Date(),
+      sentAt: new Date(),
+      data: {
+        prescriptionId,
+        requestId: requestId ? String(requestId) : "",
+      },
+    });
+  } catch (err) {
+    console.error("Error creating provider prescription notification:", err);
+  }
+
+  await sendPushToAppUser(patient, title, message, {
+    prescriptionId: String(prescriptionId),
+    requestId: requestId ? String(requestId) : "",
+  });
 }
 
 // PATIENT - Upload prescription for a request
@@ -55,6 +158,13 @@ exports.uploadPrescription = async (req, res) => {
     // One prescription per request - upsert
     const existing = await Prescription.findOne({ requestId });
     if (existing) {
+      if (existing.source === "provider_issued") {
+        deleteFile(file.filename);
+        return res.status(400).json({
+          message:
+            "A provider-issued prescription already exists for this consultation.",
+        });
+      }
       // Only allow re-upload if still pending_review
       if (existing.status !== "pending_review") {
         deleteFile(file.filename);
@@ -66,6 +176,7 @@ exports.uploadPrescription = async (req, res) => {
       deleteFile(existing.prescriptionImage);
       existing.prescriptionImage = file.filename;
       existing.fileType = getFileType(file.filename);
+      existing.source = "patient_pharmacy";
       await existing.save();
       return res.status(200).json({
         message: "Prescription updated successfully.",
@@ -79,6 +190,7 @@ exports.uploadPrescription = async (req, res) => {
       prescriptionImage: file.filename,
       fileType: getFileType(file.filename),
       status: "pending_review",
+      source: "patient_pharmacy",
     });
 
     return res.status(201).json({
@@ -87,6 +199,7 @@ exports.uploadPrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("uploadPrescription error:", err);
+    if (req.file) deleteFile(req.file.filename);
     return res.status(500).json({ message: "Server error." });
   }
 };
@@ -108,6 +221,12 @@ exports.updatePrescription = async (req, res) => {
     if (!prescription) {
       deleteFile(file.filename);
       return res.status(404).json({ message: "Prescription not found." });
+    }
+    if (prescription.source === "provider_issued") {
+      deleteFile(file.filename);
+      return res.status(403).json({
+        message: "Provider-issued prescriptions cannot be edited by patients.",
+      });
     }
     if (!prescription.patientId || prescription.patientId.toString() !== patientId.toString()) {
       deleteFile(file.filename);
@@ -131,23 +250,42 @@ exports.updatePrescription = async (req, res) => {
     });
   } catch (err) {
     console.error("updatePrescription error:", err);
+    if (req.file) deleteFile(req.file.filename);
     return res.status(500).json({ message: "Server error." });
   }
 };
 
-// PATIENT - Get prescription by requestId
+// PATIENT or assigned PROVIDER - Get prescription by requestId
 // GET /api/app/prescription/by-request/:requestId
 exports.getPrescriptionByRequest = async (req, res) => {
   try {
-    const patientId = req.user.id;
+    const userId = req.user.id;
     const { requestId } = req.params;
 
-    const prescription = await Prescription.findOne({ requestId });
-    if (!prescription) {
-      return res.status(404).json({ message: "No prescription found for this request." });
+    const request = await ConsultationRequest.findById(requestId).select(
+      "patientId providerId",
+    );
+    if (!request) {
+      return res.status(404).json({ message: "Request not found." });
     }
-    if (!prescription.patientId || prescription.patientId.toString() !== patientId.toString()) {
+
+    const isPatient =
+      request.patientId && request.patientId.toString() === userId.toString();
+    const isAssignedProvider =
+      request.providerId && request.providerId.toString() === userId.toString();
+
+    if (!isPatient && !isAssignedProvider) {
       return res.status(403).json({ message: "Not authorised." });
+    }
+
+    const prescription = await Prescription.findOne({ requestId })
+      .populate("issuerId", "fullname role")
+      .populate("pharmacistId", "fullname role");
+
+    if (!prescription) {
+      return res
+        .status(404)
+        .json({ message: "No prescription found for this request." });
     }
 
     return res.status(200).json({ prescription });
@@ -164,6 +302,7 @@ exports.getMyPrescriptions = async (req, res) => {
     const patientId = req.user.id;
     const prescriptions = await Prescription.find({ patientId })
       .populate("requestId", "status ailmentCategoryId createdAt")
+      .populate("issuerId", "fullname role")
       .sort({ createdAt: -1 });
     return res.status(200).json({ prescriptions });
   } catch (err) {
@@ -183,6 +322,11 @@ exports.cancelPrescription = async (req, res) => {
     if (!prescription) {
       return res.status(404).json({ message: "Prescription not found." });
     }
+    if (prescription.source === "provider_issued") {
+      return res.status(403).json({
+        message: "Provider-issued prescriptions cannot be cancelled by patients.",
+      });
+    }
     if (!prescription.patientId || prescription.patientId.toString() !== patientId.toString()) {
       return res.status(403).json({ message: "Not authorised." });
     }
@@ -200,6 +344,189 @@ exports.cancelPrescription = async (req, res) => {
   }
 };
 
+// PROVIDER - Upload clinical prescription for an assigned request
+// POST /api/app/prescription/provider
+exports.uploadProviderPrescription = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const { requestId } = req.body;
+    const file = req.file;
+
+    if (!requestId) {
+      if (file) deleteFile(file.filename);
+      return res.status(400).json({ message: "requestId is required." });
+    }
+    if (!file) {
+      return res.status(400).json({ message: "Prescription file is required." });
+    }
+
+    const provider = await User.findById(providerId).select(
+      "role dispensingCertificateLicence fullname",
+    );
+    if (!canIssuePrescription(provider)) {
+      deleteFile(file.filename);
+      return res.status(403).json({
+        message:
+          "Only doctors and prescribing nurses may upload clinical prescriptions.",
+      });
+    }
+
+    const request = await ConsultationRequest.findById(requestId);
+    if (!request) {
+      deleteFile(file.filename);
+      return res.status(404).json({ message: "Request not found." });
+    }
+    if (!request.providerId || request.providerId.toString() !== providerId.toString()) {
+      deleteFile(file.filename);
+      return res.status(403).json({
+        message: "You are not assigned to this consultation request.",
+      });
+    }
+
+    const windowCheck = canEditProviderPrescription(request);
+    if (!windowCheck.allowed) {
+      deleteFile(file.filename);
+      return res.status(400).json({ message: windowCheck.reason });
+    }
+
+    const existing = await Prescription.findOne({ requestId });
+    if (existing) {
+      if (existing.source === "patient_pharmacy") {
+        deleteFile(file.filename);
+        return res.status(400).json({
+          message:
+            "A pharmacy prescription already exists for this request. Use a different consultation.",
+        });
+      }
+
+      // Treat as update if provider_issued already exists
+      deleteFile(existing.prescriptionImage);
+      existing.prescriptionImage = file.filename;
+      existing.fileType = getFileType(file.filename);
+      existing.issuerId = providerId;
+      existing.status = "issued";
+      existing.source = "provider_issued";
+      await existing.save();
+
+      await notifyPatientOfProviderPrescription({
+        patientId: existing.patientId,
+        prescriptionId: existing._id,
+        requestId: request._id,
+        isUpdate: true,
+      });
+
+      return res.status(200).json({
+        message: "Prescription updated successfully.",
+        prescription: existing,
+      });
+    }
+
+    const prescription = await Prescription.create({
+      requestId,
+      patientId: request.patientId,
+      issuerId: providerId,
+      prescriptionImage: file.filename,
+      fileType: getFileType(file.filename),
+      status: "issued",
+      source: "provider_issued",
+    });
+
+    await notifyPatientOfProviderPrescription({
+      patientId: request.patientId,
+      prescriptionId: prescription._id,
+      requestId: request._id,
+      isUpdate: false,
+    });
+
+    return res.status(201).json({
+      message: "Prescription uploaded successfully.",
+      prescription,
+    });
+  } catch (err) {
+    console.error("uploadProviderPrescription error:", err);
+    if (req.file) deleteFile(req.file.filename);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
+// PROVIDER - Replace clinical prescription within edit window
+// PATCH /api/app/prescription/provider/:id
+exports.updateProviderPrescription = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const { id } = req.params;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ message: "Prescription file is required." });
+    }
+
+    const provider = await User.findById(providerId).select(
+      "role dispensingCertificateLicence",
+    );
+    if (!canIssuePrescription(provider)) {
+      deleteFile(file.filename);
+      return res.status(403).json({
+        message:
+          "Only doctors and prescribing nurses may update clinical prescriptions.",
+      });
+    }
+
+    const prescription = await Prescription.findById(id);
+    if (!prescription) {
+      deleteFile(file.filename);
+      return res.status(404).json({ message: "Prescription not found." });
+    }
+    if (prescription.source !== "provider_issued") {
+      deleteFile(file.filename);
+      return res.status(400).json({
+        message: "Only provider-issued prescriptions can be updated here.",
+      });
+    }
+
+    const request = await ConsultationRequest.findById(prescription.requestId);
+    if (!request) {
+      deleteFile(file.filename);
+      return res.status(404).json({ message: "Request not found." });
+    }
+    if (!request.providerId || request.providerId.toString() !== providerId.toString()) {
+      deleteFile(file.filename);
+      return res.status(403).json({
+        message: "You are not assigned to this consultation request.",
+      });
+    }
+
+    const windowCheck = canEditProviderPrescription(request);
+    if (!windowCheck.allowed) {
+      deleteFile(file.filename);
+      return res.status(400).json({ message: windowCheck.reason });
+    }
+
+    deleteFile(prescription.prescriptionImage);
+    prescription.prescriptionImage = file.filename;
+    prescription.fileType = getFileType(file.filename);
+    prescription.issuerId = providerId;
+    prescription.status = "issued";
+    await prescription.save();
+
+    await notifyPatientOfProviderPrescription({
+      patientId: prescription.patientId,
+      prescriptionId: prescription._id,
+      requestId: request._id,
+      isUpdate: true,
+    });
+
+    return res.status(200).json({
+      message: "Prescription updated successfully.",
+      prescription,
+    });
+  } catch (err) {
+    console.error("updateProviderPrescription error:", err);
+    if (req.file) deleteFile(req.file.filename);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
 // PHARMACIST - Get all prescriptions assigned to me + all pending_review
 // GET /api/app/prescription/pharmacist/all
 exports.getPharmacistPrescriptions = async (req, res) => {
@@ -207,6 +534,7 @@ exports.getPharmacistPrescriptions = async (req, res) => {
     const pharmacistId = req.user.id;
 
     const prescriptions = await Prescription.find({
+      source: { $ne: "provider_issued" },
       $or: [
         { status: "pending_review" },
         { pharmacistId },
@@ -237,6 +565,11 @@ exports.acceptPrescription = async (req, res) => {
     const prescription = await Prescription.findById(id).populate("requestId");
     if (!prescription) {
       return res.status(404).json({ message: "Prescription not found." });
+    }
+    if (prescription.source === "provider_issued") {
+      return res.status(400).json({
+        message: "Provider-issued prescriptions are not reviewed by pharmacists.",
+      });
     }
     if (prescription.status !== "pending_review") {
       return res.status(400).json({
@@ -315,6 +648,11 @@ exports.rejectPrescription = async (req, res) => {
     const prescription = await Prescription.findById(id).populate("requestId");
     if (!prescription) {
       return res.status(404).json({ message: "Prescription not found." });
+    }
+    if (prescription.source === "provider_issued") {
+      return res.status(400).json({
+        message: "Provider-issued prescriptions are not reviewed by pharmacists.",
+      });
     }
     if (prescription.status !== "pending_review") {
       return res.status(400).json({
