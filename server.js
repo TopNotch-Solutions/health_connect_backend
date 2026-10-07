@@ -1850,6 +1850,36 @@ io.on("connection", (socket) => {
         return;
       }
 
+      // Idempotent: same status again is a no-op (handles double-tap / retries)
+      if (request.status === status) {
+        if (
+          (status === "en_route" || status === "arrived") &&
+          providerLocation?.latitude &&
+          providerLocation?.longitude
+        ) {
+          if (!request.locationTracking) {
+            request.locationTracking = {};
+          }
+          request.locationTracking.providerLocation = {
+            latitude: providerLocation.latitude,
+            longitude: providerLocation.longitude,
+            lastUpdated: new Date(),
+          };
+          request.markModified("locationTracking");
+          await request.save();
+        }
+
+        await request.populate("patientId", "fullname cellphoneNumber");
+        await request.populate(
+          "providerId",
+          "fullname cellphoneNumber role profileImage bio",
+        );
+        await request.populate("ailmentCategoryId");
+
+        socket.emit("requestUpdated", request);
+        return;
+      }
+
       // Validate status transitions
       const validTransitions = {
         accepted: ["en_route", "cancelled"],
