@@ -34,6 +34,7 @@
     "node-fetch": "^2.7.0",
     "node-schedule": "^2.1.1",
     "nodemailer": "^7.0.10",
+    "pdfkit": "^0.20.2",
     "react": "^19.2.0",
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.1",

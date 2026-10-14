@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../frontend"
+		},
+		{
+			"path": "../health_connect_app"
+		},
+		{
+			"path": "../health-frontend-UI"
+		}
+	]
+}

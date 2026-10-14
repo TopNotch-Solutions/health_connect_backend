@@ -41,6 +41,9 @@ const packagesAppRouter = require("./routes/app/packagesRoutes");
 const authPortalRouter = require("./routes/portal/authController");
 const requestPortalRouter = require("./routes/portal/requestRoute");
 const packagesPortalRouter = require("./routes/portal/packagesRoute");
+const icd10PortalRouter = require("./routes/portal/icd10Route");
+const medicalAidPortalRouter = require("./routes/portal/medicalAidRoute");
+const medicalAidAppRouter = require("./routes/app/medicalAidRoute");
 const prescriptionAppRouter = require("./routes/app/prescriptionRoute");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
@@ -48,6 +51,8 @@ const ConsultationRequest = require("./models/request");
 const AilmentCategory = require("./models/ailment");
 const Transaction = require("./models/transaction");
 const Notification = require("./models/notification");
+const Icd10 = require("./models/icd10");
+const MedicalAid = require("./models/medicalAid");
 const {
   sendPushNotification,
   sendPushToAppUser,
@@ -133,6 +138,7 @@ app.use("/api/portal/notification", notificationPortalRouter);
 app.use("/api/app/adverts", appAdvertRouter);
 app.use("/api/app/packages", packagesAppRouter);
 app.use("/api/app/prescription", prescriptionAppRouter);
+app.use("/api/app/medical-aid", medicalAidAppRouter);
 
 // Provider request history — returns ALL requests for the authenticated provider (incl. completed)
 const { tokenAuthMiddleware, checkUser } = require("./middlewares/authMiddleware");
@@ -154,6 +160,8 @@ app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
 app.use("/api/portal/adverts", advertsRouter);
 app.use("/api/portal/packages", packagesPortalRouter);
+app.use("/api/portal/icd10", icd10PortalRouter);
+app.use("/api/portal/medical-aid", medicalAidPortalRouter);
 
 const onlineUsers = {
   patient: new Set(),
@@ -531,6 +539,7 @@ io.on("connection", (socket) => {
         address,
         paymentMethod,
         consultationMode,
+        medicalAidDetails,
       } = data;
 
       console.log(data);
@@ -610,12 +619,102 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const normalizedPaymentMethod =
+        typeof paymentMethod === "string" ? paymentMethod.trim() : "cash";
+      const allowedPaymentMethods = ["wallet", "cash", "medical_aid"];
+      if (!allowedPaymentMethods.includes(normalizedPaymentMethod)) {
+        socket.emit("requestError", {
+          error: "Invalid payment method selected.",
+        });
+        return;
+      }
+
+      let resolvedMedicalAidDetails;
+      let linkedIcd = null;
+      if (normalizedPaymentMethod === "medical_aid") {
+        linkedIcd = await Icd10.findOne({
+          alignments: ailmentCategoryId,
+        }).select("_id ICD_10_code price");
+
+        if (!linkedIcd) {
+          socket.emit("requestError", {
+            error:
+              "Medical aid payment is only available for ailments with an ICD-10 code.",
+          });
+          return;
+        }
+
+        const details = medicalAidDetails || {};
+        const medicalAidId = details.medicalAidId;
+        const membershipNumber = String(details.membershipNumber || "").trim();
+        const mainMemberName = String(details.mainMemberName || "").trim();
+        const residentialAddress = String(
+          details.residentialAddress || "",
+        ).trim();
+
+        if (
+          !medicalAidId ||
+          !membershipNumber ||
+          !mainMemberName ||
+          !residentialAddress
+        ) {
+          socket.emit("requestError", {
+            error:
+              "Please provide medical aid, membership number, main member name, and residential address.",
+          });
+          return;
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(medicalAidId)) {
+          socket.emit("requestError", {
+            error: "Invalid medical aid selected.",
+          });
+          return;
+        }
+
+        const medicalAid = await MedicalAid.findById(medicalAidId).select(
+          "title image",
+        );
+        if (!medicalAid) {
+          socket.emit("requestError", {
+            error: "Selected medical aid was not found.",
+          });
+          return;
+        }
+
+        resolvedMedicalAidDetails = {
+          medicalAidId: medicalAid._id,
+          medicalAidTitle: medicalAid.title,
+          medicalAidImage: medicalAid.image || null,
+          membershipNumber,
+          mainMemberName,
+          residentialAddress,
+          icd10Id: linkedIcd._id,
+          icd10Code: linkedIcd.ICD_10_code,
+        };
+      }
+
+      // Medical aid consultations use the ICD-10 price; otherwise use ailment costs.
       const selectedCost =
-        consultationMode === "video_consultation"
-          ? ailmentCategory.teleconsultationCost
-          : ailmentCategory.physicalconsultationCost;
+        normalizedPaymentMethod === "medical_aid"
+          ? linkedIcd?.price
+          : consultationMode === "video_consultation"
+            ? ailmentCategory.teleconsultationCost
+            : ailmentCategory.physicalconsultationCost;
       const parsedEstimatedCost = parseFloat(selectedCost);
-      if (isNaN(parsedEstimatedCost) || parsedEstimatedCost <= 0) {
+      if (isNaN(parsedEstimatedCost) || parsedEstimatedCost < 0) {
+        socket.emit("requestError", {
+          error:
+            normalizedPaymentMethod === "medical_aid"
+              ? "ICD-10 consultation price is unavailable. Please contact support."
+              : "Consultation cost for this category is unavailable. Please contact support.",
+        });
+        return;
+      }
+      if (
+        normalizedPaymentMethod !== "medical_aid" &&
+        parsedEstimatedCost <= 0
+      ) {
         socket.emit("requestError", {
           error:
             "Consultation cost for this category is unavailable. Please contact support.",
@@ -623,14 +722,16 @@ io.on("connection", (socket) => {
         return;
       }
 
-
       const request = new ConsultationRequest({
         patientId: validPatientId,
         ailmentCategoryId,
         address,
         preferredTime: Date.now(),
         consultationCost: parsedEstimatedCost,
-        paymentMethod: paymentMethod,
+        paymentMethod: normalizedPaymentMethod,
+        ...(resolvedMedicalAidDetails
+          ? { medicalAidDetails: resolvedMedicalAidDetails }
+          : {}),
         status: "searching",
         consultationMode,
       });
@@ -647,6 +748,9 @@ io.on("connection", (socket) => {
           select: "title",
         },
       });
+      if (request.medicalAidDetails?.medicalAidId) {
+        await request.populate("medicalAidDetails.medicalAidId", "title");
+      }
 
       // Notify patient using their user id
       const patientSocketId = userSockets.get(patientId);
@@ -924,7 +1028,37 @@ io.on("connection", (socket) => {
       const categories = await AilmentCategory.find()
         .populate("specialization")
         .sort({ createdAt: -1 });
-      socket.emit("ailmentCategories", categories);
+
+      const icdLinks = await Icd10.find()
+        .select("ICD_10_code alignments price")
+        .lean();
+
+      const icdByAilmentId = new Map();
+      for (const icd of icdLinks) {
+        for (const alignmentId of icd.alignments || []) {
+          const key = String(alignmentId);
+          if (!icdByAilmentId.has(key)) {
+            icdByAilmentId.set(key, []);
+          }
+          icdByAilmentId.get(key).push({
+            _id: icd._id,
+            ICD_10_code: icd.ICD_10_code,
+            price: icd.price,
+          });
+        }
+      }
+
+      const enriched = categories.map((category) => {
+        const plain = category.toObject ? category.toObject() : category;
+        const codes = icdByAilmentId.get(String(plain._id)) || [];
+        return {
+          ...plain,
+          hasIcd10: codes.length > 0,
+          icd10Codes: codes,
+        };
+      });
+
+      socket.emit("ailmentCategories", enriched);
     } catch (error) {
       socket.emit("requestError", { error: error.message });
     }

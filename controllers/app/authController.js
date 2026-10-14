@@ -1173,6 +1173,21 @@ exports.updateHealthProvider = async (req, res) => {
           "It seems you don't have an account yet. Please register to get started.",
       });
     }
+    const previousSpecializations = Array.isArray(existingUser.specializations)
+      ? existingUser.specializations.map(String)
+      : [];
+    const nextSpecializations = Array.isArray(specializations)
+      ? specializations.map(String)
+      : [];
+    const specializationsChanged =
+      previousSpecializations.length !== nextSpecializations.length ||
+      !previousSpecializations.every((spec) =>
+        nextSpecializations.includes(spec),
+      ) ||
+      !nextSpecializations.every((spec) =>
+        previousSpecializations.includes(spec),
+      );
+
     existingUser.fullname = fullname;
     existingUser.cellphoneNumber = cellphoneNumber;
     existingUser.email = email;
@@ -1185,10 +1200,22 @@ exports.updateHealthProvider = async (req, res) => {
     existingUser.yearsOfExperience = yearsOfExperience;
     existingUser.operationalZone = operationalZone;
     existingUser.governingCouncil = governingCouncil;
+
+    // Changing specializations requires documents to be re-approved.
+    if (specializationsChanged) {
+      existingUser.isDocumentVerified = false;
+    }
+
     await existingUser.save();
     res.status(200).json({
       status: true,
-      message: "Your profile details have been updated successfully.",
+      message: specializationsChanged
+        ? "Your profile details have been updated successfully. Because your specializations changed, your documents will need to be re-approved before you can go online."
+        : "Your profile details have been updated successfully.",
+      user: {
+        isDocumentVerified: existingUser.isDocumentVerified,
+        specializations: existingUser.specializations,
+      },
     });
   } catch (error) {
     console.error("Error registering patient:", error);

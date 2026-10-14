@@ -96,8 +96,42 @@ const consultationRequestSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["wallet", "cash"],
+      enum: ["wallet", "cash", "medical_aid"],
       default: "wallet",
+    },
+    // Medical aid payment details (required when paymentMethod is medical_aid)
+    medicalAidDetails: {
+      medicalAidId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "MedicalAid",
+      },
+      medicalAidTitle: { type: String },
+      medicalAidImage: { type: String },
+      membershipNumber: { type: String },
+      mainMemberName: { type: String },
+      residentialAddress: { type: String },
+      icd10Id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Icd10",
+      },
+      icd10Code: { type: String },
+    },
+    // Medical aid claim download / collection audit (provider)
+    medicalAidClaimDownload: {
+      downloaded: { type: Boolean, default: false },
+      downloadedAt: { type: Date },
+      downloadCount: { type: Number, default: 0 },
+      lastDownloadedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+      },
+      // Provider marks claim as collected / submitted to medical aid
+      claimed: { type: Boolean, default: false },
+      claimedAt: { type: Date },
+      claimedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+      },
     },
     // Track providers who have rejected this request (for 'searching' mode)
     rejectedBy: [{
