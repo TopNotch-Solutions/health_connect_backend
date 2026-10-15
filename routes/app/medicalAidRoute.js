@@ -4,6 +4,7 @@ const {
   providerStats,
   providerConsultations,
   downloadClaimPdf,
+  downloadClaimPdfsBatch,
   markClaimed,
 } = require("../../controllers/app/medicalAidController");
 const {
@@ -25,6 +26,13 @@ medicalAidAppRouter.get(
   tokenAuthMiddleware,
   checkUser,
   providerConsultations,
+);
+// Batch combined claim PDF (must be registered before :id route)
+medicalAidAppRouter.post(
+  "/consultations/claim-pdf",
+  tokenAuthMiddleware,
+  checkUser,
+  downloadClaimPdfsBatch,
 );
 medicalAidAppRouter.get(
   "/consultations/:id/claim-pdf",

@@ -4,7 +4,12 @@ const Icd10 = require("../../models/icd10");
 const Specialization = require("../../models/specialization");
 const User = require("../../models/user");
 const ConsultationRequest = require("../../models/request");
-const { streamMedicalAidClaimPdf } = require("../../utils/medicalAidClaimPdf");
+const BankDetails = require("../../models/bankDetails");
+const {
+  streamMedicalAidClaimPdf,
+  ensureConsultationTimelineForClaim,
+} = require("../../utils/medicalAidClaimPdf");
+const { isBankDetailsComplete } = require("../../utils/bankDetailsValidation");
 
 exports.all = async (req, res) => {
   try {
@@ -301,6 +306,62 @@ exports.providerConsultations = async (req, res) => {
   }
 };
 
+const CLAIM_POPULATE = [
+  {
+    path: "patientId",
+    select: "fullname cellphoneNumber nationalId email dateOfBirth address",
+  },
+  { path: "ailmentCategoryId", select: "title" },
+  {
+    path: "providerId",
+    select:
+      "fullname cellphoneNumber email address cityTown town region practiceNumber hpcnaNumber settlementCellNumber",
+  },
+];
+
+function markRequestDownloaded(request, providerId) {
+  const previous = request.medicalAidClaimDownload || {};
+  const previousCount = Number(previous.downloadCount || 0);
+  request.medicalAidClaimDownload = {
+    ...(previous.toObject?.() || previous),
+    downloaded: true,
+    downloadedAt: new Date(),
+    downloadCount: previousCount + 1,
+    lastDownloadedBy: providerId,
+    claimed: Boolean(previous.claimed),
+    claimedAt: previous.claimedAt || undefined,
+    claimedBy: previous.claimedBy || undefined,
+  };
+  return request;
+}
+
+function validateClaimForDownload(request, providerId) {
+  if (!request) {
+    return { status: 404, message: "Consultation not found" };
+  }
+  if (String(request.providerId?._id || request.providerId) !== String(providerId)) {
+    return { status: 403, message: "You are not allowed to download this claim" };
+  }
+  if (request.paymentMethod !== "medical_aid") {
+    return { status: 400, message: "This consultation is not a medical aid claim" };
+  }
+  if (request.status !== "completed") {
+    return {
+      status: 400,
+      message:
+        "Claims can only be downloaded after the consultation is completed.",
+    };
+  }
+  if (request.medicalAidClaimDownload?.claimed) {
+    return {
+      status: 400,
+      message:
+        "This claim has already been marked as claimed and can no longer be downloaded.",
+    };
+  }
+  return null;
+}
+
 exports.downloadClaimPdf = async (req, res) => {
   try {
     const providerId = req.user?.id || req.user?._id;
@@ -320,45 +381,25 @@ exports.downloadClaimPdf = async (req, res) => {
       });
     }
 
-    const request = await ConsultationRequest.findById(requestId)
-      .populate("patientId", "fullname cellphoneNumber nationalId email dateOfBirth address")
-      .populate("ailmentCategoryId", "title")
-      .populate("providerId", "fullname cellphoneNumber email address cityTown town region practiceNumber hpcnaNumber settlementCellNumber");
+    const request = await ConsultationRequest.findById(requestId).populate(
+      CLAIM_POPULATE,
+    );
 
-    if (!request) {
-      return res.status(404).json({
+    const validationError = validateClaimForDownload(request, providerId);
+    if (validationError) {
+      return res.status(validationError.status).json({
         status: "FAILURE",
-        message: "Consultation not found",
+        message: validationError.message,
       });
     }
 
-    if (String(request.providerId?._id || request.providerId) !== String(providerId)) {
-      return res.status(403).json({
-        status: "FAILURE",
-        message: "You are not allowed to download this claim",
-      });
-    }
-
-    if (request.paymentMethod !== "medical_aid") {
+    const bankDetails = await BankDetails.findOne({ userId: providerId });
+    if (!isBankDetailsComplete(bankDetails)) {
       return res.status(400).json({
         status: "FAILURE",
-        message: "This consultation is not a medical aid claim",
-      });
-    }
-
-    if (request.status !== "completed") {
-      return res.status(400).json({
-        status: "FAILURE",
+        code: "BANK_DETAILS_REQUIRED",
         message:
-          "Claims can only be downloaded after the consultation is completed.",
-      });
-    }
-
-    if (request.medicalAidClaimDownload?.claimed) {
-      return res.status(400).json({
-        status: "FAILURE",
-        message:
-          "This claim has already been marked as claimed and can no longer be downloaded.",
+          "Please complete your practice bank details before downloading a medical aid claim.",
       });
     }
 
@@ -369,22 +410,10 @@ exports.downloadClaimPdf = async (req, res) => {
             "fullname cellphoneNumber email address cityTown town region practiceNumber hpcnaNumber settlementCellNumber",
           );
 
-    // Mark claim as downloaded before streaming so the list can show status.
-    const previous = request.medicalAidClaimDownload || {};
-    const previousCount = Number(previous.downloadCount || 0);
-    request.medicalAidClaimDownload = {
-      ...previous.toObject?.() || previous,
-      downloaded: true,
-      downloadedAt: new Date(),
-      downloadCount: previousCount + 1,
-      lastDownloadedBy: providerId,
-      claimed: Boolean(previous.claimed),
-      claimedAt: previous.claimedAt || undefined,
-      claimedBy: previous.claimedBy || undefined,
-    };
+    ensureConsultationTimelineForClaim(request);
+    markRequestDownloaded(request, providerId);
     await request.save();
 
-    // Expose download state to the client via response headers.
     res.setHeader("X-Claim-Downloaded", "true");
     res.setHeader(
       "X-Claim-Download-Count",
@@ -398,13 +427,129 @@ exports.downloadClaimPdf = async (req, res) => {
     }
 
     streamMedicalAidClaimPdf(res, {
-      request,
+      claims: [
+        {
+          request,
+          patient: request.patientId,
+          ailment: request.ailmentCategoryId,
+        },
+      ],
       provider,
-      patient: request.patientId,
-      ailment: request.ailmentCategoryId,
+      bankDetails,
     });
   } catch (error) {
     console.error("Error generating medical aid claim PDF:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: "ERROR",
+        message: error.message,
+      });
+    }
+    res.end();
+  }
+};
+
+/**
+ * Download multiple consultations as a single combined claim PDF
+ * (one statement with multiple line items).
+ * Body: { ids: string[] }
+ */
+exports.downloadClaimPdfsBatch = async (req, res) => {
+  try {
+    const providerId = req.user?.id || req.user?._id;
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+
+    if (!providerId) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "User id is required",
+      });
+    }
+
+    const ids = [
+      ...new Set(
+        rawIds
+          .map((id) => String(id || "").trim())
+          .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+      ),
+    ];
+
+    if (!ids.length) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "Select at least one valid consultation id",
+      });
+    }
+
+    const bankDetails = await BankDetails.findOne({ userId: providerId });
+    if (!isBankDetailsComplete(bankDetails)) {
+      return res.status(400).json({
+        status: "FAILURE",
+        code: "BANK_DETAILS_REQUIRED",
+        message:
+          "Please complete your practice bank details before downloading a medical aid claim.",
+      });
+    }
+
+    const requests = await ConsultationRequest.find({
+      _id: { $in: ids },
+    }).populate(CLAIM_POPULATE);
+
+    const byId = new Map(requests.map((r) => [String(r._id), r]));
+    const ordered = [];
+    const failures = [];
+
+    for (const id of ids) {
+      const request = byId.get(id);
+      const validationError = validateClaimForDownload(request, providerId);
+      if (validationError) {
+        failures.push({ id, message: validationError.message });
+        continue;
+      }
+      ordered.push(request);
+    }
+
+    if (!ordered.length) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message:
+          failures[0]?.message ||
+          "None of the selected consultations can be downloaded.",
+        failures,
+      });
+    }
+
+    const provider =
+      ordered[0].providerId && typeof ordered[0].providerId === "object"
+        ? ordered[0].providerId
+        : await User.findById(providerId).select(
+            "fullname cellphoneNumber email address cityTown town region practiceNumber hpcnaNumber settlementCellNumber",
+          );
+
+    for (const request of ordered) {
+      ensureConsultationTimelineForClaim(request);
+      markRequestDownloaded(request, providerId);
+      await request.save();
+    }
+
+    res.setHeader("X-Claim-Downloaded", "true");
+    res.setHeader("X-Claim-Download-Count", String(ordered.length));
+    res.setHeader(
+      "X-Claim-Downloaded-Ids",
+      ordered.map((r) => String(r._id)).join(","),
+    );
+
+    streamMedicalAidClaimPdf(res, {
+      claims: ordered.map((request) => ({
+        request,
+        patient: request.patientId,
+        ailment: request.ailmentCategoryId,
+      })),
+      provider,
+      bankDetails,
+    });
+  } catch (error) {
+    console.error("Error generating batch medical aid claim PDF:", error);
     if (!res.headersSent) {
       return res.status(500).json({
         status: "ERROR",

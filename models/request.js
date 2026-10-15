@@ -110,11 +110,47 @@ const consultationRequestSchema = new mongoose.Schema(
       membershipNumber: { type: String },
       mainMemberName: { type: String },
       residentialAddress: { type: String },
+      // Snapshot of Namibian postal address at time of request
+      postalAddress: {
+        addressee: { type: String },
+        addressType: {
+          type: String,
+          enum: ["po_box", "private_bag", "street"],
+        },
+        boxNumber: { type: String },
+        bagNumber: { type: String },
+        unitOrAdditional: { type: String },
+        premises: { type: String },
+        subLocality: { type: String },
+        locality: { type: String },
+        postOffice: { type: String },
+        postcode: { type: String },
+        country: { type: String, default: "NAMIBIA" },
+        formatted: { type: String },
+      },
       icd10Id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Icd10",
       },
       icd10Code: { type: String },
+    },
+    // Provider Namibian postal address snapshot (set when accepting medical_aid)
+    providerPostalAddress: {
+      addressee: { type: String },
+      addressType: {
+        type: String,
+        enum: ["po_box", "private_bag", "street"],
+      },
+      boxNumber: { type: String },
+      bagNumber: { type: String },
+      unitOrAdditional: { type: String },
+      premises: { type: String },
+      subLocality: { type: String },
+      locality: { type: String },
+      postOffice: { type: String },
+      postcode: { type: String },
+      country: { type: String, default: "NAMIBIA" },
+      formatted: { type: String },
     },
     // Medical aid claim download / collection audit (provider)
     medicalAidClaimDownload: {
@@ -182,6 +218,9 @@ consultationRequestSchema.index({ "address.coordinates": "2dsphere" }); // For g
 // Pre-save middleware to update timeline
 consultationRequestSchema.pre("save", function(next) {
   if (this.isModified("status")) {
+    if (!this.timeline) {
+      this.timeline = {};
+    }
     const now = new Date();
     switch (this.status) {
       case "accepted":
@@ -196,7 +235,10 @@ consultationRequestSchema.pre("save", function(next) {
         break;
       case "in_call":
         this.timeline.callStarted = now;
-        this.timeline.consultationStarted = now;
+        // Preserve original start if consultation was already started
+        if (!this.timeline.consultationStarted) {
+          this.timeline.consultationStarted = now;
+        }
         break;
       case "en_route":
         this.timeline.providerEnRoute = now;
@@ -205,12 +247,24 @@ consultationRequestSchema.pre("save", function(next) {
         this.timeline.providerArrived = now;
         break;
       case "in_progress":
-        this.timeline.consultationStarted = now;
+        if (!this.timeline.consultationStarted) {
+          this.timeline.consultationStarted = now;
+        }
         break;
       case "completed":
         this.timeline.consultationCompleted = now;
+        // House visits can jump arrived → completed; ensure TIME IN is set
+        if (!this.timeline.consultationStarted) {
+          this.timeline.consultationStarted =
+            this.timeline.callStarted ||
+            this.timeline.providerArrived ||
+            this.timeline.providerEnRoute ||
+            now;
+        }
         break;
     }
+    // Nested timeline paths are not always auto-tracked — force persistence
+    this.markModified("timeline");
   }
   next();
 });

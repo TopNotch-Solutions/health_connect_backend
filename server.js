@@ -44,7 +44,14 @@ const packagesPortalRouter = require("./routes/portal/packagesRoute");
 const icd10PortalRouter = require("./routes/portal/icd10Route");
 const medicalAidPortalRouter = require("./routes/portal/medicalAidRoute");
 const medicalAidAppRouter = require("./routes/app/medicalAidRoute");
+const postalAddressAppRouter = require("./routes/app/postalAddressRoute");
+const bankDetailsAppRouter = require("./routes/app/bankDetailsRoute");
 const prescriptionAppRouter = require("./routes/app/prescriptionRoute");
+const PostalAddress = require("./models/postalAddress");
+const {
+  validateNamibianPostalAddress,
+  formatPostalAddressString,
+} = require("./utils/postalAddressValidation");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -139,6 +146,8 @@ app.use("/api/app/adverts", appAdvertRouter);
 app.use("/api/app/packages", packagesAppRouter);
 app.use("/api/app/prescription", prescriptionAppRouter);
 app.use("/api/app/medical-aid", medicalAidAppRouter);
+app.use("/api/app/postal-address", postalAddressAppRouter);
+app.use("/api/app/bank-details", bankDetailsAppRouter);
 
 // Provider request history — returns ALL requests for the authenticated provider (incl. completed)
 const { tokenAuthMiddleware, checkUser } = require("./middlewares/authMiddleware");
@@ -682,6 +691,77 @@ io.on("connection", (socket) => {
           return;
         }
 
+        // Prefer postal address sent with the request; otherwise load saved profile address.
+        let postalSnapshot = null;
+        const postalInput = details.postalAddress;
+        if (postalInput && typeof postalInput === "object") {
+          const postalValidation = validateNamibianPostalAddress(postalInput);
+          if (!postalValidation.ok) {
+            socket.emit("requestError", {
+              error: postalValidation.error,
+            });
+            return;
+          }
+          postalSnapshot = {
+            ...postalValidation.data,
+            formatted: formatPostalAddressString(postalValidation.data),
+          };
+
+          // Persist / update the patient's saved postal address for next time.
+          try {
+            await PostalAddress.findOneAndUpdate(
+              { userId: validPatientId },
+              {
+                userId: validPatientId,
+                ...postalValidation.data,
+                boxNumber: postalValidation.data.boxNumber || null,
+                bagNumber: postalValidation.data.bagNumber || null,
+                unitOrAdditional:
+                  postalValidation.data.unitOrAdditional || null,
+                premises: postalValidation.data.premises || null,
+                subLocality: postalValidation.data.subLocality || null,
+                locality: postalValidation.data.locality || null,
+              },
+              {
+                upsert: true,
+                new: true,
+                runValidators: true,
+                setDefaultsOnInsert: true,
+              },
+            );
+          } catch (postalSaveError) {
+            console.error(
+              "Failed to save postal address on request:",
+              postalSaveError,
+            );
+          }
+        } else {
+          const savedPostal = await PostalAddress.findOne({
+            userId: validPatientId,
+          });
+          if (!savedPostal) {
+            socket.emit("requestError", {
+              error:
+                "Please confirm your Namibian postal address before submitting with medical aid.",
+            });
+            return;
+          }
+          postalSnapshot = {
+            addressee: savedPostal.addressee,
+            addressType: savedPostal.addressType,
+            boxNumber: savedPostal.boxNumber || undefined,
+            bagNumber: savedPostal.bagNumber || undefined,
+            unitOrAdditional: savedPostal.unitOrAdditional || undefined,
+            premises: savedPostal.premises || undefined,
+            subLocality: savedPostal.subLocality || undefined,
+            locality: savedPostal.locality || undefined,
+            postOffice: savedPostal.postOffice,
+            postcode: savedPostal.postcode,
+            country: savedPostal.country || "NAMIBIA",
+            formatted: formatPostalAddressString(savedPostal),
+          };
+        }
+
         resolvedMedicalAidDetails = {
           medicalAidId: medicalAid._id,
           medicalAidTitle: medicalAid.title,
@@ -689,6 +769,7 @@ io.on("connection", (socket) => {
           membershipNumber,
           mainMemberName,
           residentialAddress,
+          postalAddress: postalSnapshot,
           icd10Id: linkedIcd._id,
           icd10Code: linkedIcd.ICD_10_code,
         };
@@ -867,11 +948,36 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Get available requests for providers
+  // Get available requests for providers (paginated; default 20 per page)
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
       const { providerId, providerLocation, latitude, longitude } = data;
-      console.log("🔍 getAvailableRequests handler - providerId:", providerId);
+      const page = Math.max(1, parseInt(data.page, 10) || 1);
+      const limit = Math.min(
+        100,
+        Math.max(1, parseInt(data.limit, 10) || 20),
+      );
+      console.log("🔍 getAvailableRequests handler - providerId:", providerId, {
+        page,
+        limit,
+      });
+
+      const emitAvailableRequests = (requestsList) => {
+        const total = Array.isArray(requestsList) ? requestsList.length : 0;
+        const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+        const start = (page - 1) * limit;
+        const paged = (requestsList || []).slice(start, start + limit);
+        socket.emit("availableRequests", {
+          requests: paged,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasMore: page < totalPages,
+          },
+        });
+      };
 
       const providerLatitude = providerLocation?.latitude ?? latitude;
       const providerLongitude = providerLocation?.longitude ?? longitude;
@@ -949,7 +1055,7 @@ io.on("connection", (socket) => {
             "⚠️ Provider is busy with request:",
             activeForProvider._id,
           );
-          socket.emit("availableRequests", []);
+          emitAvailableRequests([]);
           return;
         }
       }
@@ -1015,7 +1121,7 @@ io.on("connection", (socket) => {
           JSON.stringify(filteredRequests[0], null, 2),
         );
       }
-      socket.emit("availableRequests", filteredRequests);
+      emitAvailableRequests(filteredRequests);
     } catch (error) {
       console.error("❌ getAvailableRequests error:", error);
       socket.emit("requestError", { error: error.message });
@@ -1471,12 +1577,44 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (provider.consultations === 0) {
+      // Package credits are not used for medical aid (billed to the fund).
+      if (
+        request.paymentMethod !== "medical_aid" &&
+        Number(provider.consultations || 0) <= 0
+      ) {
         socket.emit("requestError", {
           error:
             "You have no remaining consultation credits. Please select and purchase a package to continue accepting consultation requests.",
         });
         return;
+      }
+
+      // Medical aid accepts require the provider's confirmed Namibian postal address.
+      if (request.paymentMethod === "medical_aid") {
+        const providerPostal = await PostalAddress.findOne({
+          userId: validProviderId,
+        });
+        if (!providerPostal) {
+          socket.emit("requestError", {
+            error:
+              "Please confirm your Namibian postal address before accepting a medical aid consultation.",
+          });
+          return;
+        }
+        request.providerPostalAddress = {
+          addressee: providerPostal.addressee,
+          addressType: providerPostal.addressType,
+          boxNumber: providerPostal.boxNumber || undefined,
+          bagNumber: providerPostal.bagNumber || undefined,
+          unitOrAdditional: providerPostal.unitOrAdditional || undefined,
+          premises: providerPostal.premises || undefined,
+          subLocality: providerPostal.subLocality || undefined,
+          locality: providerPostal.locality || undefined,
+          postOffice: providerPostal.postOffice,
+          postcode: providerPostal.postcode,
+          country: providerPostal.country || "NAMIBIA",
+          formatted: formatPostalAddressString(providerPostal),
+        };
       }
 
       const nextStatus =
@@ -1755,8 +1893,21 @@ io.on("connection", (socket) => {
           },
         );
 
+        // For expiry, only count providers who are still eligible in principle.
+        // Do NOT expire just because remaining providers fail a temporary
+        // location/radius check (e.g. while confirming postal address).
+        const remainingEligibleProviderIds = matchingProviderIds.filter(
+          (id) =>
+            !busyProviderIds.some(
+              (busyId) => busyId && busyId.toString() === id.toString(),
+            ) &&
+            !request.rejectedBy.some(
+              (rid) => rid && rid.toString() === id.toString(),
+            ),
+        );
+
         // If no providers are available, notify patient with friendly message
-        if (availableProviderIds.length === 0) {
+        if (remainingEligibleProviderIds.length === 0) {
           const patientIdKey = request.patientId._id.toString();
           const patientSocketId = userSockets.get(patientIdKey);
           if (patientSocketId) {
@@ -2182,6 +2333,32 @@ io.on("connection", (socket) => {
 
       request.status = status;
 
+      // Explicitly stamp consultation start/end for claim PDF TIME IN / TIME OUT.
+      // (Also handled in model pre-save; this guarantees nested timeline persists.)
+      if (!request.timeline) {
+        request.timeline = {};
+      }
+      const timelineNow = new Date();
+      if (status === "in_call" || status === "in_progress") {
+        if (!request.timeline.consultationStarted) {
+          request.timeline.consultationStarted = timelineNow;
+        }
+        if (status === "in_call" && !request.timeline.callStarted) {
+          request.timeline.callStarted = timelineNow;
+        }
+      }
+      if (status === "completed") {
+        request.timeline.consultationCompleted = timelineNow;
+        if (!request.timeline.consultationStarted) {
+          request.timeline.consultationStarted =
+            request.timeline.callStarted ||
+            request.timeline.providerArrived ||
+            request.timeline.providerEnRoute ||
+            timelineNow;
+        }
+      }
+      request.markModified("timeline");
+
       if (!(await ensureRequestConsultationCost(request))) {
         socket.emit("requestError", {
           error:
@@ -2201,9 +2378,15 @@ io.on("connection", (socket) => {
       // Process payment when consultation is completed
       if (status === "completed") {
           const provider = await User.findById(request.providerId._id);
-          provider.consultations = provider.consultations - 1;
-
-                 await provider.save();
+          // Medical aid is billed to the fund — do not consume package consultation credits.
+          if (
+            provider &&
+            request.paymentMethod !== "medical_aid" &&
+            Number(provider.consultations) > 0
+          ) {
+            provider.consultations = Number(provider.consultations) - 1;
+            await provider.save();
+          }
 
           // Record provider earning once per request (ledger + home "this month")
           const earningRef = `earning:${request._id.toString()}`;
