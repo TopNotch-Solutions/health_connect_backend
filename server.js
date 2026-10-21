@@ -74,6 +74,53 @@ app.use(
   }),
 );
 
+// Portal (different origin) embeds uploaded PDFs in iframes. Helmet's default
+// X-Frame-Options: SAMEORIGIN causes "refused to connect" in the browser.
+// Relax framing only for /images; keep the rest of the API locked down.
+const portalFrameOrigins = [
+  process.env.LOCAL_HOST_1,
+  process.env.LOCAL_HOST_2,
+  process.env.LOCAL_HOST_3,
+].filter(Boolean);
+
+const isAllowedPortalOrigin = (origin) => {
+  if (!origin) return false;
+  if (portalFrameOrigins.includes(origin)) return true;
+  try {
+    const { protocol, hostname } = new URL(origin);
+    if (protocol === "http:" && hostname === "localhost") return true;
+    if (protocol === "https:" && hostname.endsWith("kopanovertex.com")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+};
+
+app.use("/images", (req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  const frameAncestors = [
+    "'self'",
+    "https://*.kopanovertex.com",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+    ...portalFrameOrigins,
+  ].join(" ");
+  res.setHeader(
+    "Content-Security-Policy",
+    `default-src 'none'; frame-ancestors ${frameAncestors}`,
+  );
+
+  // express.static is mounted before the global CORS middleware, so allow
+  // portal fetch() here for blob-based PDF previews.
+  const origin = req.headers.origin;
+  if (isAllowedPortalOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+  }
+  next();
+});
+
 // Behind a proxy/load balancer, express-rate-limit needs the real client IP
 // rather than the proxy's, or every user shares one bucket.
 app.set("trust proxy", 1);
