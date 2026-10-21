@@ -1,12 +1,59 @@
 const LoginAttemptPortalUser = require("../../models/loginAttemptPortal");
 const PortalUser = require("../../models/userPortal");
 const User = require("../../models/user");
+const Transaction = require("../../models/transaction");
 const { isValidCellphoneNumber } = require("../../utils/cellphoneNumberValidation");
 const { validatePassword } = require("../../utils/validatePassword");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
-const path = require("path")
+const path = require("path");
+
+const PURCHASE_MATCH = { type: "purchase", status: "completed" };
+
+async function sumCompletedPurchasesSince(fromDate) {
+  const result = await Transaction.aggregate([
+    {
+      $match: {
+        ...PURCHASE_MATCH,
+        time: { $gte: fromDate },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  return {
+    total: result[0]?.total || 0,
+    count: result[0]?.count || 0,
+  };
+}
+
+function startOfLocalDay(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function startOfLocalWeek(date = new Date()) {
+  const d = startOfLocalDay(date);
+  const day = d.getDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - daysFromMonday);
+  return d;
+}
+
+function startOfLocalMonth(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function startOfLocalYear(date = new Date()) {
+  return new Date(date.getFullYear(), 0, 1);
+}
 
 exports.create_portal_user = async (req, res) => {
     const { firstName, lastName, cellphoneNumber, email, password, role, profileImage, addedBy, department, permissions } = req.body;
@@ -319,6 +366,58 @@ exports.getDashboardStats = async (req, res) => {
       industryCount: item.count
     }));
 
+    // Completed package purchases only — period totals + YoY monthly series
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const previousYear = currentYear - 1;
+    const [
+      purchasesToday,
+      purchasesThisWeek,
+      purchasesThisMonth,
+      purchasesThisYear,
+      purchaseYoYAgg,
+    ] = await Promise.all([
+      sumCompletedPurchasesSince(startOfLocalDay(now)),
+      sumCompletedPurchasesSince(startOfLocalWeek(now)),
+      sumCompletedPurchasesSince(startOfLocalMonth(now)),
+      sumCompletedPurchasesSince(startOfLocalYear(now)),
+      Transaction.aggregate([
+        {
+          $match: {
+            ...PURCHASE_MATCH,
+            time: {
+              $gte: new Date(previousYear, 0, 1),
+              $lt: new Date(currentYear + 1, 0, 1),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$time" },
+              month: { $month: "$time" },
+            },
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+    ]);
+
+    const purchaseYoYMap = new Map(
+      purchaseYoYAgg.map((row) => [
+        `${row._id.year}-${row._id.month}`,
+        row.total,
+      ]),
+    );
+    const purchaseYoYLineData = monthNames.map((name, index) => {
+      const month = index + 1;
+      return {
+        name,
+        currentYear: purchaseYoYMap.get(`${currentYear}-${month}`) || 0,
+        previousYear: purchaseYoYMap.get(`${previousYear}-${month}`) || 0,
+      };
+    });
+
     res.status(200).json({
       status: true,
       stats: {
@@ -331,7 +430,16 @@ exports.getDashboardStats = async (req, res) => {
         socialWorkers,
         totalTowns,
         lineData,
-        topDepartments: topTowns
+        topDepartments: topTowns,
+        purchaseStats: {
+          day: purchasesToday,
+          week: purchasesThisWeek,
+          month: purchasesThisMonth,
+          year: purchasesThisYear,
+          currentYear,
+          previousYear,
+          yoYLineData: purchaseYoYLineData,
+        },
       }
     });
   } catch (error) {
