@@ -1,5 +1,8 @@
 const PDFDocument = require("pdfkit");
 
+/** Namibia local timezone for claim DATE / TIME IN / TIME OUT */
+const CLAIM_TIME_ZONE = "Africa/Windhoek";
+
 function formatMoney(amount) {
   const value = Number(amount || 0);
   return `$${value.toLocaleString("en-NA", {
@@ -12,9 +15,16 @@ function formatDate(date) {
   if (!date) return "—";
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "—";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
+  // Namibia calendar date (Africa/Windhoek)
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CLAIM_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(d);
+  const dd = parts.find((p) => p.type === "day")?.value || "—";
+  const mm = parts.find((p) => p.type === "month")?.value || "—";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "—";
   return `${dd}.${mm}.${yyyy}`;
 }
 
@@ -22,10 +32,12 @@ function formatTime(date) {
   if (!date) return "—";
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "—";
+  // Namibia local time so claim TIME IN / TIME OUT match the app
   return d.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: CLAIM_TIME_ZONE,
   });
 }
 
@@ -110,15 +122,25 @@ function patientDisplayName(request, patient) {
 function getTimelineDate(request, key) {
   const timeline = request?.timeline;
   if (!timeline || typeof timeline !== "object") return null;
-  const raw =
-    typeof timeline.get === "function" ? timeline.get(key) : timeline[key];
-  if (!raw) return null;
+
+  let raw;
+  if (typeof timeline.get === "function") {
+    raw = timeline.get(key);
+  } else if (timeline[key] != null) {
+    raw = timeline[key];
+  } else if (timeline._doc && timeline._doc[key] != null) {
+    raw = timeline._doc[key];
+  }
+
+  if (raw == null || raw === "") return null;
   const d = raw instanceof Date ? raw : new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
- * Ensure claim TIME IN / TIME OUT fields exist on a completed request.
+ * Ensure claim TIME IN / TIME OUT exist from consultation start & completed.
+ * TIME IN  = timeline.consultationStarted (when consultation began)
+ * TIME OUT = timeline.consultationCompleted (when consultation ended)
  * Returns true if the document was modified and should be saved.
  */
 function ensureConsultationTimelineForClaim(request) {
@@ -128,8 +150,8 @@ function ensureConsultationTimelineForClaim(request) {
   }
 
   let changed = false;
-  const started = getTimelineDate(request, "consultationStarted");
-  const completed = getTimelineDate(request, "consultationCompleted");
+  let started = getTimelineDate(request, "consultationStarted");
+  let completed = getTimelineDate(request, "consultationCompleted");
 
   if (!started) {
     const fallback =
@@ -140,13 +162,22 @@ function ensureConsultationTimelineForClaim(request) {
       (request.createdAt ? new Date(request.createdAt) : null);
     if (fallback) {
       request.timeline.consultationStarted = fallback;
+      started = fallback;
       changed = true;
     }
   }
 
   if (!completed && request.status === "completed") {
-    request.timeline.consultationCompleted =
+    const fallbackCompleted =
       (request.updatedAt ? new Date(request.updatedAt) : null) || new Date();
+    request.timeline.consultationCompleted = fallbackCompleted;
+    completed = fallbackCompleted;
+    changed = true;
+  }
+
+  // TIME OUT must not be earlier than TIME IN
+  if (started && completed && completed.getTime() < started.getTime()) {
+    request.timeline.consultationCompleted = started;
     changed = true;
   }
 
@@ -157,6 +188,9 @@ function ensureConsultationTimelineForClaim(request) {
 }
 
 function buildLineItem({ request, patient, ailment }, providerName, practiceNumber) {
+  // Always resolve TIME IN / TIME OUT from captured consultation times
+  ensureConsultationTimelineForClaim(request);
+
   const medicalAid = request.medicalAidDetails || {};
   const timeIn = getTimelineDate(request, "consultationStarted");
   const timeOut = getTimelineDate(request, "consultationCompleted");
@@ -169,10 +203,6 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
   const icd10 = medicalAid.icd10Code || "—";
   const ailmentTitle = ailment?.title || "Consultation";
   const amount = Number(request.consultationCost || 0);
-  const shortProvider =
-    providerName.length > 14 ? `${providerName.slice(0, 14)}…` : providerName;
-  const shortPatient =
-    patientName.length > 12 ? `${patientName.slice(0, 12)}…` : patientName;
 
   return {
     consultationDate,
@@ -187,8 +217,7 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
     medicalAid,
     request,
     amount,
-    shortProvider,
-    shortPatient,
+    providerName,
     practiceNumber,
     details: `${ailmentTitle}\nICD10 ${icd10}`,
   };
@@ -302,6 +331,8 @@ function streamMedicalAidClaimPdf(res, options) {
   const maf = sameMedicalAid ? lineItems[0].maf : "VARIOUS";
   const mainMemberId = samePatient ? lineItems[0].mainMemberId : "VARIOUS";
 
+  // Header TIME IN / TIME OUT = consultation started / completed
+  // (earliest start and latest end when the PDF batches multiple claims)
   const timeIns = lineItems
     .map((item) => item.timeIn)
     .filter(Boolean)
@@ -448,22 +479,38 @@ function streamMedicalAidClaimPdf(res, options) {
     }
 
     doc.font("Helvetica").fontSize(8).fillColor("#111827");
-    doc.text(formatDate(item.consultationDate), cols[0].x, y, {
+    const rowStartY = y;
+    const cellHeights = [
+      doc.heightOfString(formatDate(item.consultationDate), {
+        width: cols[0].w,
+      }),
+      doc.heightOfString(item.providerName, { width: cols[1].w }),
+      doc.heightOfString(item.patientName, { width: cols[2].w }),
+      doc.heightOfString(String(item.practiceNumber), { width: cols[3].w }),
+      doc.heightOfString(item.details, { width: cols[4].w }),
+      doc.heightOfString(formatMoney(item.amount), { width: cols[5].w }),
+      doc.heightOfString(formatMoney(item.amount), { width: cols[6].w }),
+    ];
+    const rowHeight = Math.max(24, ...cellHeights) + 10;
+
+    doc.text(formatDate(item.consultationDate), cols[0].x, rowStartY, {
       width: cols[0].w,
     });
-    doc.text(item.shortProvider, cols[1].x, y, { width: cols[1].w });
-    doc.text(item.shortPatient, cols[2].x, y, { width: cols[2].w });
-    doc.text(String(item.practiceNumber), cols[3].x, y, { width: cols[3].w });
-    doc.text(item.details, cols[4].x, y, { width: cols[4].w });
-    doc.text(formatMoney(item.amount), cols[5].x, y, {
+    doc.text(item.providerName, cols[1].x, rowStartY, { width: cols[1].w });
+    doc.text(item.patientName, cols[2].x, rowStartY, { width: cols[2].w });
+    doc.text(String(item.practiceNumber), cols[3].x, rowStartY, {
+      width: cols[3].w,
+    });
+    doc.text(item.details, cols[4].x, rowStartY, { width: cols[4].w });
+    doc.text(formatMoney(item.amount), cols[5].x, rowStartY, {
       width: cols[5].w,
       align: "right",
     });
-    doc.text(formatMoney(item.amount), cols[6].x, y, {
+    doc.text(formatMoney(item.amount), cols[6].x, rowStartY, {
       width: cols[6].w,
       align: "right",
     });
-    y += 36;
+    y = rowStartY + rowHeight;
   });
 
   if (y > pageBottom - 200) {

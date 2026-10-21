@@ -964,7 +964,10 @@ io.on("connection", (socket) => {
                 providerUser.expoPushToken,
                 "New Consultation Request",
                 "A new patient is requesting a consultation nearby.",
-                { requestId: request._id },
+                {
+                  type: "consultation_requested",
+                  requestId: request._id,
+                },
               );
             }
           }
@@ -1666,15 +1669,24 @@ io.on("connection", (socket) => {
         };
       }
 
-      const nextStatus =
-        request.consultationMode === "video_consultation"
+      // Cash video: EFT handshake (payment_pending → … → ready_for_call).
+      // Medical aid video: billed via the fund — skip eWallet / EFT acceptance.
+      // House visit: accepted as usual.
+      const isVideo = request.consultationMode === "video_consultation";
+      const isCashPayment = request.paymentMethod === "cash";
+      const nextStatus = isVideo
+        ? isCashPayment
           ? "payment_pending"
-          : "accepted";
+          : "ready_for_call"
+        : "accepted";
 
       request.status = nextStatus;
       request.providerId = validProviderId;
       if (nextStatus === "payment_pending") {
         request.paymentStatus = "pending";
+      } else if (isVideo && !isCashPayment) {
+        // Medical aid / wallet video — no patient EFT step
+        request.paymentStatus = "paid";
       }
       if (!(await ensureRequestConsultationCost(request))) {
         socket.emit("requestError", {
@@ -1792,7 +1804,13 @@ io.on("connection", (socket) => {
             nextStatus === "payment_pending"
               ? `${request.providerId.fullname} accepted your teleconsultation. Complete payment to continue.`
               : `${request.providerId.fullname} has accepted your request.`,
-            { requestId: request._id },
+            {
+              type:
+                nextStatus === "payment_pending"
+                  ? "consultation_payment_pending"
+                  : "consultation_accepted",
+              requestId: request._id,
+            },
           );
         }
       }
@@ -2274,6 +2292,14 @@ io.on("connection", (socket) => {
           return;
         }
 
+        if (request.paymentMethod !== "cash") {
+          socket.emit("requestError", {
+            error:
+              "eWallet payment confirmation only applies to cash teleconsultations. Medical aid consultations do not require this step.",
+          });
+          return;
+        }
+
         request.paymentStatus = "pending";
       }
 
@@ -2382,8 +2408,8 @@ io.on("connection", (socket) => {
 
       request.status = status;
 
-      // Explicitly stamp consultation start/end for claim PDF TIME IN / TIME OUT.
-      // (Also handled in model pre-save; this guarantees nested timeline persists.)
+      // Explicitly stamp consultation start/end (TIME IN / TIME OUT).
+      // First write wins — never overwrite an existing start/complete time.
       if (!request.timeline) {
         request.timeline = {};
       }
@@ -2397,12 +2423,15 @@ io.on("connection", (socket) => {
         }
       }
       if (status === "completed") {
-        request.timeline.consultationCompleted = timelineNow;
+        if (!request.timeline.consultationCompleted) {
+          request.timeline.consultationCompleted = timelineNow;
+        }
         if (!request.timeline.consultationStarted) {
           request.timeline.consultationStarted =
             request.timeline.callStarted ||
             request.timeline.providerArrived ||
             request.timeline.providerEnRoute ||
+            request.timeline.providerAccepted ||
             timelineNow;
         }
       }
@@ -2524,6 +2553,7 @@ io.on("connection", (socket) => {
 
           if (patientUser.expoPushToken) {
             sendPushNotification(patientUser.expoPushToken, title, body, {
+              type,
               requestId: request._id,
             });
           }
@@ -2672,7 +2702,10 @@ io.on("connection", (socket) => {
             providerUser.expoPushToken,
             "Request Cancelled",
             "The patient has cancelled the consultation request.",
-            { requestId: request._id },
+            {
+              type: "consultation_cancelled",
+              requestId: request._id,
+            },
           );
         }
       } else if (cancelledBy === "provider") {
@@ -2685,7 +2718,10 @@ io.on("connection", (socket) => {
             patientUser.expoPushToken,
             "Request Cancelled",
             "The provider has cancelled the consultation request.",
-            { requestId: request._id },
+            {
+              type: "consultation_cancelled",
+              requestId: request._id,
+            },
           );
         }
       }

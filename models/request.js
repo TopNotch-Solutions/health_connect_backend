@@ -215,7 +215,8 @@ consultationRequestSchema.index({ providerId: 1, status: 1 });
 consultationRequestSchema.index({ status: 1, createdAt: -1 });
 consultationRequestSchema.index({ "address.coordinates": "2dsphere" }); // For geospatial queries with GeoJSON
 
-// Pre-save middleware to update timeline
+// Pre-save middleware to update timeline.
+// Never overwrite existing start/end stamps — first transition wins.
 consultationRequestSchema.pre("save", function(next) {
   if (this.isModified("status")) {
     if (!this.timeline) {
@@ -225,26 +226,40 @@ consultationRequestSchema.pre("save", function(next) {
     switch (this.status) {
       case "accepted":
       case "payment_pending":
-        this.timeline.providerAccepted = now;
+        if (!this.timeline.providerAccepted) {
+          this.timeline.providerAccepted = now;
+        }
         break;
       case "paid":
-        this.timeline.paymentConfirmed = now;
+        if (!this.timeline.paymentConfirmed) {
+          this.timeline.paymentConfirmed = now;
+        }
         break;
       case "ready_for_call":
-        this.timeline.providerConfirmed = now;
+        if (!this.timeline.providerConfirmed) {
+          this.timeline.providerConfirmed = now;
+        }
+        if (!this.timeline.providerAccepted) {
+          this.timeline.providerAccepted = now;
+        }
         break;
       case "in_call":
-        this.timeline.callStarted = now;
-        // Preserve original start if consultation was already started
+        if (!this.timeline.callStarted) {
+          this.timeline.callStarted = now;
+        }
         if (!this.timeline.consultationStarted) {
           this.timeline.consultationStarted = now;
         }
         break;
       case "en_route":
-        this.timeline.providerEnRoute = now;
+        if (!this.timeline.providerEnRoute) {
+          this.timeline.providerEnRoute = now;
+        }
         break;
       case "arrived":
-        this.timeline.providerArrived = now;
+        if (!this.timeline.providerArrived) {
+          this.timeline.providerArrived = now;
+        }
         break;
       case "in_progress":
         if (!this.timeline.consultationStarted) {
@@ -252,13 +267,16 @@ consultationRequestSchema.pre("save", function(next) {
         }
         break;
       case "completed":
-        this.timeline.consultationCompleted = now;
-        // House visits can jump arrived → completed; ensure TIME IN is set
+        if (!this.timeline.consultationCompleted) {
+          this.timeline.consultationCompleted = now;
+        }
+        // Ensure TIME IN is always present when TIME OUT is recorded
         if (!this.timeline.consultationStarted) {
           this.timeline.consultationStarted =
             this.timeline.callStarted ||
             this.timeline.providerArrived ||
             this.timeline.providerEnRoute ||
+            this.timeline.providerAccepted ||
             now;
         }
         break;

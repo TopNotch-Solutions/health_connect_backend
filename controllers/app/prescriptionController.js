@@ -121,6 +121,7 @@ async function notifyPatientOfProviderPrescription({
   }
 
   await sendPushToAppUser(patient, title, message, {
+    type: "prescription_ready",
     prescriptionId: String(prescriptionId),
     requestId: requestId ? String(requestId) : "",
   });
@@ -619,6 +620,7 @@ exports.acceptPrescription = async (req, res) => {
         "Prescription Accepted",
         "Your prescription has been accepted. Medication delivery is on the way.",
         {
+          type: "prescription_accepted",
           prescriptionId: id,
           requestId: request ? String(request._id) : "",
         },
@@ -686,7 +688,10 @@ exports.rejectPrescription = async (req, res) => {
         patient,
         "Prescription Rejected",
         "Your prescription was rejected." + reasonText,
-        { prescriptionId: id },
+        {
+          type: "prescription_rejected",
+          prescriptionId: id,
+        },
       );
     }
 
