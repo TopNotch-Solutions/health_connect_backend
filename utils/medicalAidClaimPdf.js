@@ -654,7 +654,8 @@ async function streamMedicalAidClaimPdf(res, options) {
     });
     doc.text(item.providerName, cols[1].x, rowStartY, { width: cols[1].w });
     doc.text(item.patientName, cols[2].x, rowStartY, { width: cols[2].w });
-    doc.text(String(item.practiceNumber), cols[3].x, rowStartY, {
+    // BHF/NAMAF = portal MAF (not practice number / ICD-10)
+    doc.text(String(item.maf || "—"), cols[3].x, rowStartY, {
       width: cols[3].w,
     });
     doc.text(item.details, cols[4].x, rowStartY, { width: cols[4].w });
