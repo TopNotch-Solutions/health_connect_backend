@@ -261,8 +261,9 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
     patientName,
     patientId: String(patient?._id || patient || ""),
     medicalAidTitle: String(medicalAid.medicalAidTitle || "MEDICAL AID"),
-    maf: medicalAid.membershipNumber || "—",
-    mainMemberId: patient?.nationalId || medicalAid.membershipNumber || "—",
+    // MAF comes from the ailment ICD-10 code (portal), not a patient membership field
+    maf: medicalAid.icd10Code || medicalAid.membershipNumber || "—",
+    mainMemberId: patient?.nationalId || medicalAid.mainMemberName || "—",
     patientPhone: String(patient?.cellphoneNumber || "").trim(),
     medicalAid,
     request,

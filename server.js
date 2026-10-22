@@ -707,21 +707,16 @@ io.on("connection", (socket) => {
 
         const details = medicalAidDetails || {};
         const medicalAidId = details.medicalAidId;
-        const membershipNumber = String(details.membershipNumber || "").trim();
         const mainMemberName = String(details.mainMemberName || "").trim();
         const residentialAddress = String(
           details.residentialAddress || "",
         ).trim();
 
-        if (
-          !medicalAidId ||
-          !membershipNumber ||
-          !mainMemberName ||
-          !residentialAddress
-        ) {
+        // MAF is not collected in the app — claim MAF uses the ailment ICD-10 code.
+        if (!medicalAidId || !mainMemberName || !residentialAddress) {
           socket.emit("requestError", {
             error:
-              "Please provide medical aid, membership number, main member name, and residential address.",
+              "Please provide medical aid, main member name, and residential address.",
           });
           return;
         }
@@ -818,7 +813,8 @@ io.on("connection", (socket) => {
           medicalAidId: medicalAid._id,
           medicalAidTitle: medicalAid.title,
           medicalAidImage: medicalAid.image || null,
-          membershipNumber,
+          // MAF on claims = ICD-10 code from the ailment portal
+          membershipNumber: linkedIcd.ICD_10_code,
           mainMemberName,
           residentialAddress,
           postalAddress: postalSnapshot,

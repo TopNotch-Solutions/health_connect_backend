@@ -251,7 +251,7 @@ exports.providerConsultations = async (req, res) => {
       status: { $nin: ["cancelled", "expired", "rejected"] },
       $or: [
         { paymentMethod: "medical_aid" },
-        { "medicalAidDetails.membershipNumber": { $exists: true, $nin: [null, ""] } },
+        { "medicalAidDetails.icd10Code": { $exists: true, $nin: [null, ""] } },
         { "medicalAidDetails.medicalAidId": { $exists: true, $ne: null } },
       ],
     };
