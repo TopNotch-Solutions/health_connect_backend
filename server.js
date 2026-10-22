@@ -230,6 +230,9 @@ const onlineUsers = {
   pharmacist: new Set(),
 };
 
+/** How long a searching/pending request stays open before it expires. */
+const SEARCH_EXPIRE_HOURS = 3;
+
 // Store socket IDs by user role and userId for targeted messaging
 const userSockets = new Map(); // userId -> socketId
 
@@ -362,7 +365,7 @@ io.on("connection", (socket) => {
   ];
   const SEARCH_RADIUS_MAX_KM = 8;
   const SEARCH_RADIUS_STEP_MINUTES = 1;
-  const SEARCH_EXPIRE_HOURS = 6;
+  // SEARCH_EXPIRE_HOURS is defined at module scope (shared with expiry cron)
 
   const isValidLatitude = (value) =>
     typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
@@ -2753,6 +2756,78 @@ io.on("connection", (socket) => {
       );
     }
   });
+});
+
+// Expire searching/pending consultation requests after SEARCH_EXPIRE_HOURS
+// and notify the patient (in-app + push + socket).
+schedule.scheduleJob("* * * * *", async () => {
+  try {
+    const cutoff = new Date(
+      Date.now() - SEARCH_EXPIRE_HOURS * 60 * 60 * 1000,
+    );
+
+    const expiredRequests = await ConsultationRequest.find({
+      status: { $in: ["searching", "pending"] },
+      createdAt: { $lte: cutoff },
+    }).populate("patientId", "expoPushToken fullname");
+
+    if (expiredRequests.length === 0) {
+      return;
+    }
+
+    console.log(
+      `Expiring ${expiredRequests.length} consultation request(s) older than ${SEARCH_EXPIRE_HOURS}h...`,
+    );
+
+    const expiredTitle = "Request expired";
+    const expiredBody = `Your consultation request expired after ${SEARCH_EXPIRE_HOURS} hours with no provider accepting. Please create a new request if you still need care.`;
+
+    for (const request of expiredRequests) {
+      request.status = "expired";
+      await request.save();
+
+      const patientDoc = request.patientId;
+      const patientId = patientDoc?._id || patientDoc;
+
+      try {
+        if (patientId) {
+          await Notification.createNotification({
+            userId: patientId,
+            type: "request_expired",
+            title: expiredTitle,
+            message: expiredBody,
+            status: "sent",
+            data: { requestId: request._id },
+            priority: "high",
+          });
+          await sendPushToAppUser(patientDoc, expiredTitle, expiredBody, {
+            requestId: String(request._id),
+            type: "request_expired",
+          });
+        }
+      } catch (notifyErr) {
+        console.error(
+          "Error notifying patient for timed-out request:",
+          notifyErr,
+        );
+      }
+
+      const patientIdKey = patientId ? String(patientId) : null;
+      const patientSocketId = patientIdKey
+        ? userSockets.get(patientIdKey)
+        : null;
+      if (patientSocketId) {
+        io.to(patientSocketId).emit("requestUpdated", request);
+      }
+      io.emit("requestStatusChanged", {
+        requestId: request._id,
+        status: "expired",
+      });
+      io.emit("requestHidden", { requestId: request._id });
+    }
+  } catch (error) {
+    console.error("Error expiring timed-out consultation requests:", error);
+  }
 });
 
 schedule.scheduleJob("0 */6 * * *", async () => {

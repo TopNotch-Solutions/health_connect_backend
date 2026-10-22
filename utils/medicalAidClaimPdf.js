@@ -118,23 +118,79 @@ function patientDisplayName(request, patient) {
   ).toUpperCase();
 }
 
-/** Read a timeline date from a mongoose doc or plain object. */
-function getTimelineDate(request, key) {
-  const timeline = request?.timeline;
-  if (!timeline || typeof timeline !== "object") return null;
-
-  let raw;
-  if (typeof timeline.get === "function") {
-    raw = timeline.get(key);
-  } else if (timeline[key] != null) {
-    raw = timeline[key];
-  } else if (timeline._doc && timeline._doc[key] != null) {
-    raw = timeline._doc[key];
-  }
-
+/** Coerce a stored date value to a valid Date, or null. */
+function asValidDate(raw) {
   if (raw == null || raw === "") return null;
   const d = raw instanceof Date ? raw : new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Read a nested field from a mongoose doc / subdoc / plain object. */
+function readNestedField(container, key) {
+  if (!container || typeof container !== "object") return null;
+
+  // Prefer bracket access. Nested Mongoose subdocuments expose Document.get(),
+  // but subdoc.get(key) often returns undefined even when subdoc[key] is set.
+  let raw = container[key];
+
+  if (raw == null && container._doc && container._doc[key] != null) {
+    const nestedLooksLikeParent =
+      container._doc.timeline != null || container._doc._id != null;
+    if (!nestedLooksLikeParent) {
+      raw = container._doc[key];
+    }
+  }
+
+  return raw != null && raw !== "" ? raw : null;
+}
+
+/** Read a timeline date from a mongoose doc or plain object. */
+function getTimelineDate(request, key) {
+  const timeline = request?.timeline;
+  let raw = readNestedField(timeline, key);
+
+  if (raw == null && typeof request?.toObject === "function") {
+    raw = request.toObject({ depopulate: true })?.timeline?.[key];
+  }
+
+  return asValidDate(raw);
+}
+
+/** consultationDetails.startTime / endTime (legacy / parallel stamps). */
+function getConsultationDetailsDate(request, key) {
+  const details = request?.consultationDetails;
+  let raw = readNestedField(details, key);
+  if (raw == null && typeof request?.toObject === "function") {
+    raw = request.toObject({ depopulate: true })?.consultationDetails?.[key];
+  }
+  return asValidDate(raw);
+}
+
+/**
+ * Resolve claim TIME IN / TIME OUT from timeline, then consultationDetails.
+ */
+function resolveClaimTimes(request) {
+  const timeIn =
+    getTimelineDate(request, "consultationStarted") ||
+    getConsultationDetailsDate(request, "startTime") ||
+    getTimelineDate(request, "callStarted") ||
+    getTimelineDate(request, "providerArrived") ||
+    getTimelineDate(request, "providerEnRoute") ||
+    getTimelineDate(request, "providerAccepted") ||
+    asValidDate(request?.createdAt);
+
+  let timeOut =
+    getTimelineDate(request, "consultationCompleted") ||
+    getConsultationDetailsDate(request, "endTime") ||
+    (request?.status === "completed"
+      ? asValidDate(request?.updatedAt) || new Date()
+      : null);
+
+  if (timeIn && timeOut && timeOut.getTime() < timeIn.getTime()) {
+    timeOut = timeIn;
+  }
+
+  return { timeIn: timeIn || null, timeOut: timeOut || null };
 }
 
 /**
@@ -150,32 +206,25 @@ function ensureConsultationTimelineForClaim(request) {
   }
 
   let changed = false;
-  let started = getTimelineDate(request, "consultationStarted");
-  let completed = getTimelineDate(request, "consultationCompleted");
+  const { timeIn, timeOut } = resolveClaimTimes(request);
 
-  if (!started) {
-    const fallback =
-      getTimelineDate(request, "callStarted") ||
-      getTimelineDate(request, "providerArrived") ||
-      getTimelineDate(request, "providerEnRoute") ||
-      getTimelineDate(request, "providerAccepted") ||
-      (request.createdAt ? new Date(request.createdAt) : null);
-    if (fallback) {
-      request.timeline.consultationStarted = fallback;
-      started = fallback;
-      changed = true;
-    }
+  if (!getTimelineDate(request, "consultationStarted") && timeIn) {
+    request.timeline.consultationStarted = timeIn;
+    changed = true;
   }
 
-  if (!completed && request.status === "completed") {
-    const fallbackCompleted =
-      (request.updatedAt ? new Date(request.updatedAt) : null) || new Date();
-    request.timeline.consultationCompleted = fallbackCompleted;
-    completed = fallbackCompleted;
+  if (
+    !getTimelineDate(request, "consultationCompleted") &&
+    timeOut &&
+    request.status === "completed"
+  ) {
+    request.timeline.consultationCompleted = timeOut;
     changed = true;
   }
 
   // TIME OUT must not be earlier than TIME IN
+  const started = getTimelineDate(request, "consultationStarted");
+  const completed = getTimelineDate(request, "consultationCompleted");
   if (started && completed && completed.getTime() < started.getTime()) {
     request.timeline.consultationCompleted = started;
     changed = true;
@@ -192,8 +241,7 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
   ensureConsultationTimelineForClaim(request);
 
   const medicalAid = request.medicalAidDetails || {};
-  const timeIn = getTimelineDate(request, "consultationStarted");
-  const timeOut = getTimelineDate(request, "consultationCompleted");
+  const { timeIn, timeOut } = resolveClaimTimes(request);
   const consultationDate =
     timeOut ||
     timeIn ||
@@ -202,7 +250,9 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
   const patientName = patientDisplayName(request, patient);
   const icd10 = medicalAid.icd10Code || "—";
   const ailmentTitle = ailment?.title || "Consultation";
-  const amount = Number(request.consultationCost || 0);
+  const amount = Number(
+    request.consultationCost || request.estimatedCost || 0,
+  );
 
   return {
     consultationDate,
