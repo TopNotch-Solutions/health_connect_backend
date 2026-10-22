@@ -1657,11 +1657,8 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Package credits are not used for medical aid (billed to the fund).
-      if (
-        request.paymentMethod !== "medical_aid" &&
-        Number(provider.consultations || 0) <= 0
-      ) {
+      // Require package consultation credits for all payment methods, including medical aid.
+      if (Number(provider.consultations || 0) <= 0) {
         socket.emit("requestError", {
           error:
             "You have no remaining consultation credits. Please select and purchase a package to continue accepting consultation requests.",
@@ -2484,12 +2481,8 @@ io.on("connection", (socket) => {
       // Process payment when consultation is completed
       if (status === "completed") {
           const provider = await User.findById(request.providerId._id);
-          // Medical aid is billed to the fund — do not consume package consultation credits.
-          if (
-            provider &&
-            request.paymentMethod !== "medical_aid" &&
-            Number(provider.consultations) > 0
-          ) {
+          // Consume one package consultation credit (wallet, cash, and medical aid).
+          if (provider && Number(provider.consultations) > 0) {
             provider.consultations = Number(provider.consultations) - 1;
             await provider.save();
           }
