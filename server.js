@@ -481,8 +481,14 @@ io.on("connection", (socket) => {
 
     const normalizedProviderCoordinates =
       normalizeCoordinates(providerCoordinates);
+    // If GPS isn't on the socket yet, still allow the realtime push for matching
+    // providers — otherwise they never get newRequestAvailable / voice alerts.
+    // Distance filtering still applies on getAvailableRequests.
     if (!normalizedProviderCoordinates) {
-      return { allowed: false, reason: "provider_location_missing" };
+      return {
+        allowed: true,
+        reason: "allowed_without_provider_location",
+      };
     }
 
     const allowedRadiusKm = getAllowedSearchRadiusKm(request.createdAt);
@@ -574,6 +580,14 @@ io.on("connection", (socket) => {
     socket.role = normalizedRole;
     socket.userId = normalizedUserId;
 
+    // Optional location on join so newRequestAvailable can fire immediately
+    const joinLocation = normalizeCoordinates(
+      data?.providerLocation || data?.location,
+    );
+    if (joinLocation) {
+      socket.providerLocation = joinLocation;
+    }
+
     // Store socket for user if userId provided
     if (normalizedUserId) {
       userSockets.set(normalizedUserId, socket.id);
@@ -587,8 +601,18 @@ io.on("connection", (socket) => {
       {
         userId: normalizedUserId,
         rawRole,
+        hasLocation: Boolean(joinLocation),
       },
     );
+  });
+
+  // Keep provider GPS on the socket for realtime new-request pushes
+  socket.on("updateProviderLocation", (data = {}) => {
+    const coords = normalizeCoordinates(
+      data?.providerLocation || data?.location || data,
+    );
+    if (!coords) return;
+    socket.providerLocation = coords;
   });
 
   // Create a new consultation request (Patient)
