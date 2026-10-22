@@ -236,7 +236,106 @@ function ensureConsultationTimelineForClaim(request) {
   return changed;
 }
 
-function buildLineItem({ request, patient, ailment }, providerName, practiceNumber) {
+/**
+ * Load portal ICD-10 records and resolve the MAF value for each claim.
+ * Portal MAF is authoritative for the claim "MAF" field.
+ */
+async function resolvePortalMafsForClaims(claims) {
+  const Icd10 = require("../models/icd10");
+  const mafByRequestId = new Map();
+
+  const icdIds = [];
+  const ailmentIds = [];
+
+  for (const claim of claims) {
+    const medicalAid = claim.request?.medicalAidDetails || {};
+    if (medicalAid.icd10Id) {
+      icdIds.push(String(medicalAid.icd10Id));
+      continue;
+    }
+    const ailmentId =
+      claim.request?.ailmentCategoryId?._id ||
+      claim.request?.ailmentCategoryId ||
+      claim.ailment?._id ||
+      claim.ailment;
+    if (ailmentId) {
+      ailmentIds.push(String(ailmentId));
+    }
+  }
+
+  const uniqueIcdIds = [...new Set(icdIds)];
+  const byIcdId = new Map();
+  if (uniqueIcdIds.length) {
+    const icds = await Icd10.find({ _id: { $in: uniqueIcdIds } })
+      .select("MAF ICD_10_code")
+      .lean();
+    for (const icd of icds) {
+      byIcdId.set(String(icd._id), icd);
+    }
+  }
+
+  const uniqueAilmentIds = [...new Set(ailmentIds)];
+  const byAlignment = new Map();
+  if (uniqueAilmentIds.length) {
+    const aligned = await Icd10.find({
+      alignments: { $in: uniqueAilmentIds },
+    })
+      .select("MAF ICD_10_code alignments")
+      .lean();
+    for (const icd of aligned) {
+      for (const alignmentId of icd.alignments || []) {
+        const key = String(alignmentId);
+        if (!byAlignment.has(key)) {
+          byAlignment.set(key, icd);
+        }
+      }
+    }
+  }
+
+  for (const claim of claims) {
+    const request = claim.request;
+    if (!request?._id) continue;
+
+    const medicalAid = request.medicalAidDetails || {};
+    let portal = null;
+
+    if (medicalAid.icd10Id) {
+      portal = byIcdId.get(String(medicalAid.icd10Id)) || null;
+    }
+    if (!portal) {
+      const ailmentId =
+        request.ailmentCategoryId?._id ||
+        request.ailmentCategoryId ||
+        claim.ailment?._id ||
+        claim.ailment;
+      if (ailmentId) {
+        portal = byAlignment.get(String(ailmentId)) || null;
+      }
+    }
+
+    const portalMaf = portal?.MAF ? String(portal.MAF).trim() : "";
+    const maf =
+      portalMaf ||
+      (medicalAid.maf ? String(medicalAid.maf).trim() : "") ||
+      (medicalAid.membershipNumber
+        ? String(medicalAid.membershipNumber).trim()
+        : "") ||
+      (portal?.ICD_10_code ? String(portal.ICD_10_code).trim() : "") ||
+      (medicalAid.icd10Code ? String(medicalAid.icd10Code).trim() : "") ||
+      "—";
+
+    mafByRequestId.set(String(request._id), maf);
+  }
+
+  return mafByRequestId;
+}
+
+function buildLineItem(
+  { request, patient, ailment },
+  providerName,
+  practiceNumber,
+  portalMaf,
+) {
   // Always resolve TIME IN / TIME OUT from captured consultation times
   ensureConsultationTimelineForClaim(request);
 
@@ -261,8 +360,8 @@ function buildLineItem({ request, patient, ailment }, providerName, practiceNumb
     patientName,
     patientId: String(patient?._id || patient || ""),
     medicalAidTitle: String(medicalAid.medicalAidTitle || "MEDICAL AID"),
-    // MAF comes from the ailment ICD-10 code (portal), not a patient membership field
-    maf: medicalAid.icd10Code || medicalAid.membershipNumber || "—",
+    // MAF on the claim comes from the portal MAF field
+    maf: portalMaf || medicalAid.maf || medicalAid.membershipNumber || "—",
     mainMemberId: patient?.nationalId || medicalAid.mainMemberName || "—",
     patientPhone: String(patient?.cellphoneNumber || "").trim(),
     medicalAid,
@@ -315,7 +414,7 @@ function buildLeftAddressBlock(lineItems, samePatient) {
  * - or single: { request, patient, ailment }
  * - provider, bankDetails
  */
-function streamMedicalAidClaimPdf(res, options) {
+async function streamMedicalAidClaimPdf(res, options) {
   const { provider, bankDetails } = options;
   const claims = Array.isArray(options.claims)
     ? options.claims
@@ -338,8 +437,14 @@ function streamMedicalAidClaimPdf(res, options) {
     provider?.practiceNumber || provider?.hpcnaNumber || "—";
   const providerPhone = String(provider?.cellphoneNumber || "").trim();
 
+  const portalMafs = await resolvePortalMafsForClaims(claims);
   const lineItems = claims.map((claim) =>
-    buildLineItem(claim, providerName, practiceNumber),
+    buildLineItem(
+      claim,
+      providerName,
+      practiceNumber,
+      portalMafs.get(String(claim.request?._id)),
+    ),
   );
 
   const samePatient = lineItems.every(

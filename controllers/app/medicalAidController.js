@@ -426,7 +426,7 @@ exports.downloadClaimPdf = async (req, res) => {
       );
     }
 
-    streamMedicalAidClaimPdf(res, {
+    await streamMedicalAidClaimPdf(res, {
       claims: [
         {
           request,
@@ -539,7 +539,7 @@ exports.downloadClaimPdfsBatch = async (req, res) => {
       ordered.map((r) => String(r._id)).join(","),
     );
 
-    streamMedicalAidClaimPdf(res, {
+    await streamMedicalAidClaimPdf(res, {
       claims: ordered.map((request) => ({
         request,
         patient: request.patientId,

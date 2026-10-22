@@ -8,6 +8,11 @@ const icd10Schema = new mongoose.Schema(
       trim: true,
       unique: true,
     },
+    MAF: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     price: {
       type: Number,
       required: true,

@@ -108,6 +108,8 @@ const consultationRequestSchema = new mongoose.Schema(
       medicalAidTitle: { type: String },
       medicalAidImage: { type: String },
       membershipNumber: { type: String },
+      // Portal MAF code (used on claim statements); distinct from ICD-10
+      maf: { type: String },
       mainMemberName: { type: String },
       residentialAddress: { type: String },
       // Snapshot of Namibian postal address at time of request

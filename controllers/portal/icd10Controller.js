@@ -36,12 +36,19 @@ const normalizeObjectIdArray = (value, fieldName) => {
 
 exports.create = async (req, res) => {
   try {
-    const { ICD_10_code, price, specializations, alignments } = req.body;
+    const { ICD_10_code, MAF, price, specializations, alignments } = req.body;
 
     if (!ICD_10_code || String(ICD_10_code).trim() === "") {
       return res.status(400).json({
         status: "FAILURE",
         message: "ICD-10 code is required",
+      });
+    }
+
+    if (!MAF || String(MAF).trim() === "") {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "MAF is required",
       });
     }
 
@@ -64,6 +71,7 @@ exports.create = async (req, res) => {
     }
 
     const code = String(ICD_10_code).trim().toUpperCase();
+    const maf = String(MAF).trim().toUpperCase();
     const existing = await Icd10.findOne({ ICD_10_code: code });
     if (existing) {
       return res.status(400).json({
@@ -74,6 +82,7 @@ exports.create = async (req, res) => {
 
     const created = await Icd10.create({
       ICD_10_code: code,
+      MAF: maf,
       price: parsedPrice,
       specializations: specs.ids,
       alignments: aligns.ids,
@@ -159,7 +168,7 @@ exports.get = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { ICD_10_code, price, specializations, alignments } = req.body;
+    const { ICD_10_code, MAF, price, specializations, alignments } = req.body;
 
     const item = await Icd10.findById(id);
     if (!item) {
@@ -188,6 +197,17 @@ exports.update = async (req, res) => {
         });
       }
       item.ICD_10_code = code;
+    }
+
+    if (MAF !== undefined) {
+      const maf = String(MAF).trim().toUpperCase();
+      if (!maf) {
+        return res.status(400).json({
+          status: "FAILURE",
+          message: "MAF cannot be empty",
+        });
+      }
+      item.MAF = maf;
     }
 
     if (price !== undefined) {

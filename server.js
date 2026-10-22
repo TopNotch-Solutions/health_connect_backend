@@ -695,7 +695,7 @@ io.on("connection", (socket) => {
       if (normalizedPaymentMethod === "medical_aid") {
         linkedIcd = await Icd10.findOne({
           alignments: ailmentCategoryId,
-        }).select("_id ICD_10_code price");
+        }).select("_id ICD_10_code MAF price");
 
         if (!linkedIcd) {
           socket.emit("requestError", {
@@ -712,7 +712,7 @@ io.on("connection", (socket) => {
           details.residentialAddress || "",
         ).trim();
 
-        // MAF is not collected in the app — claim MAF uses the ailment ICD-10 code.
+        // MAF is not collected in the app — claim MAF uses the portal MAF field.
         if (!medicalAidId || !mainMemberName || !residentialAddress) {
           socket.emit("requestError", {
             error:
@@ -809,12 +809,16 @@ io.on("connection", (socket) => {
           };
         }
 
+        // Prefer dedicated MAF; fall back to ICD-10 for older portal records
+        const claimMaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
+
         resolvedMedicalAidDetails = {
           medicalAidId: medicalAid._id,
           medicalAidTitle: medicalAid.title,
           medicalAidImage: medicalAid.image || null,
-          // MAF on claims = ICD-10 code from the ailment portal
-          membershipNumber: linkedIcd.ICD_10_code,
+          // MAF on claims comes from the portal MAF field
+          membershipNumber: claimMaf,
+          maf: claimMaf,
           mainMemberName,
           residentialAddress,
           postalAddress: postalSnapshot,
@@ -1187,7 +1191,7 @@ io.on("connection", (socket) => {
         .sort({ createdAt: -1 });
 
       const icdLinks = await Icd10.find()
-        .select("ICD_10_code alignments price")
+        .select("ICD_10_code MAF alignments price")
         .lean();
 
       const icdByAilmentId = new Map();
@@ -1200,6 +1204,7 @@ io.on("connection", (socket) => {
           icdByAilmentId.get(key).push({
             _id: icd._id,
             ICD_10_code: icd.ICD_10_code,
+            MAF: icd.MAF || icd.ICD_10_code,
             price: icd.price,
           });
         }
