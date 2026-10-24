@@ -9,20 +9,75 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 
-const PURCHASE_MATCH = { type: "purchase", status: "completed" };
+// Package purchases only. Status may be missing on older rows — treat those as completed.
+const PURCHASE_TYPE_MATCH = { type: "purchase" };
+const PURCHASE_STATUS_MATCH = {
+  $or: [
+    { status: "completed" },
+    { status: { $exists: false } },
+    { status: null },
+    { status: "" },
+  ],
+};
+
+/** Namibia business timezone (fixed UTC+2; DST abolished). */
+const BUSINESS_TZ_OFFSET_MS = 2 * 60 * 60 * 1000;
+
+function toBusinessParts(date = new Date()) {
+  const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    weekday: shifted.getUTCDay(),
+  };
+}
+
+function startOfBusinessDay(date = new Date()) {
+  const { year, month, day } = toBusinessParts(date);
+  return new Date(Date.UTC(year, month, day) - BUSINESS_TZ_OFFSET_MS);
+}
+
+function startOfBusinessWeek(date = new Date()) {
+  const start = startOfBusinessDay(date);
+  const { weekday } = toBusinessParts(date);
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+  return new Date(start.getTime() - daysFromMonday * 24 * 60 * 60 * 1000);
+}
+
+function startOfBusinessMonth(date = new Date()) {
+  const { year, month } = toBusinessParts(date);
+  return new Date(Date.UTC(year, month, 1) - BUSINESS_TZ_OFFSET_MS);
+}
+
+function startOfBusinessYear(date = new Date()) {
+  const { year } = toBusinessParts(date);
+  return new Date(Date.UTC(year, 0, 1) - BUSINESS_TZ_OFFSET_MS);
+}
 
 async function sumCompletedPurchasesSince(fromDate) {
   const result = await Transaction.aggregate([
     {
       $match: {
-        ...PURCHASE_MATCH,
-        time: { $gte: fromDate },
+        ...PURCHASE_TYPE_MATCH,
+        ...PURCHASE_STATUS_MATCH,
+      },
+    },
+    {
+      $addFields: {
+        // Prefer explicit ledger time; fall back to createdAt for legacy rows
+        effectiveTime: { $ifNull: ["$time", "$createdAt"] },
+      },
+    },
+    {
+      $match: {
+        effectiveTime: { $gte: fromDate },
       },
     },
     {
       $group: {
         _id: null,
-        total: { $sum: "$amount" },
+        total: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } },
         count: { $sum: 1 },
       },
     },
@@ -31,28 +86,6 @@ async function sumCompletedPurchasesSince(fromDate) {
     total: result[0]?.total || 0,
     count: result[0]?.count || 0,
   };
-}
-
-function startOfLocalDay(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function startOfLocalWeek(date = new Date()) {
-  const d = startOfLocalDay(date);
-  const day = d.getDay();
-  const daysFromMonday = day === 0 ? 6 : day - 1;
-  d.setDate(d.getDate() - daysFromMonday);
-  return d;
-}
-
-function startOfLocalMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function startOfLocalYear(date = new Date()) {
-  return new Date(date.getFullYear(), 0, 1);
 }
 
 exports.create_portal_user = async (req, res) => {
@@ -368,8 +401,14 @@ exports.getDashboardStats = async (req, res) => {
 
     // Completed package purchases only — period totals + YoY monthly series
     const now = new Date();
-    const currentYear = now.getFullYear();
+    const { year: currentYear } = toBusinessParts(now);
     const previousYear = currentYear - 1;
+    const yoyFrom = new Date(
+      Date.UTC(previousYear, 0, 1) - BUSINESS_TZ_OFFSET_MS,
+    );
+    const yoyTo = new Date(
+      Date.UTC(currentYear + 1, 0, 1) - BUSINESS_TZ_OFFSET_MS,
+    );
     const [
       purchasesToday,
       purchasesThisWeek,
@@ -377,27 +416,44 @@ exports.getDashboardStats = async (req, res) => {
       purchasesThisYear,
       purchaseYoYAgg,
     ] = await Promise.all([
-      sumCompletedPurchasesSince(startOfLocalDay(now)),
-      sumCompletedPurchasesSince(startOfLocalWeek(now)),
-      sumCompletedPurchasesSince(startOfLocalMonth(now)),
-      sumCompletedPurchasesSince(startOfLocalYear(now)),
+      sumCompletedPurchasesSince(startOfBusinessDay(now)),
+      sumCompletedPurchasesSince(startOfBusinessWeek(now)),
+      sumCompletedPurchasesSince(startOfBusinessMonth(now)),
+      sumCompletedPurchasesSince(startOfBusinessYear(now)),
       Transaction.aggregate([
         {
           $match: {
-            ...PURCHASE_MATCH,
-            time: {
-              $gte: new Date(previousYear, 0, 1),
-              $lt: new Date(currentYear + 1, 0, 1),
-            },
+            ...PURCHASE_TYPE_MATCH,
+            ...PURCHASE_STATUS_MATCH,
+          },
+        },
+        {
+          $addFields: {
+            effectiveTime: { $ifNull: ["$time", "$createdAt"] },
+          },
+        },
+        {
+          $match: {
+            effectiveTime: { $gte: yoyFrom, $lt: yoyTo },
           },
         },
         {
           $group: {
             _id: {
-              year: { $year: "$time" },
-              month: { $month: "$time" },
+              year: {
+                $year: {
+                  date: "$effectiveTime",
+                  timezone: "Africa/Windhoek",
+                },
+              },
+              month: {
+                $month: {
+                  date: "$effectiveTime",
+                  timezone: "Africa/Windhoek",
+                },
+              },
             },
-            total: { $sum: "$amount" },
+            total: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } },
           },
         },
       ]),
