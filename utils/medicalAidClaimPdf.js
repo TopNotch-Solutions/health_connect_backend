@@ -236,13 +236,16 @@ function ensureConsultationTimelineForClaim(request) {
   return changed;
 }
 
+const PORTAL_ICD_SELECT =
+  "MAF ICD_10_code price secondaryICD_10_code secondaryPrice alignments";
+
 /**
- * Load portal ICD-10 records and resolve the MAF value for each claim.
+ * Load portal ICD-10 records for each claim (MAF, codes, prices).
  * Portal MAF is authoritative for the claim "MAF" field.
  */
-async function resolvePortalMafsForClaims(claims) {
+async function resolvePortalIcdForClaims(claims) {
   const Icd10 = require("../models/icd10");
-  const mafByRequestId = new Map();
+  const portalByRequestId = new Map();
 
   const icdIds = [];
   const ailmentIds = [];
@@ -267,7 +270,7 @@ async function resolvePortalMafsForClaims(claims) {
   const byIcdId = new Map();
   if (uniqueIcdIds.length) {
     const icds = await Icd10.find({ _id: { $in: uniqueIcdIds } })
-      .select("MAF ICD_10_code")
+      .select(PORTAL_ICD_SELECT)
       .lean();
     for (const icd of icds) {
       byIcdId.set(String(icd._id), icd);
@@ -280,7 +283,7 @@ async function resolvePortalMafsForClaims(claims) {
     const aligned = await Icd10.find({
       alignments: { $in: uniqueAilmentIds },
     })
-      .select("MAF ICD_10_code alignments")
+      .select(PORTAL_ICD_SELECT)
       .lean();
     for (const icd of aligned) {
       for (const alignmentId of icd.alignments || []) {
@@ -324,10 +327,10 @@ async function resolvePortalMafsForClaims(claims) {
       (medicalAid.icd10Code ? String(medicalAid.icd10Code).trim() : "") ||
       "—";
 
-    mafByRequestId.set(String(request._id), maf);
+    portalByRequestId.set(String(request._id), { portal, maf });
   }
 
-  return mafByRequestId;
+  return portalByRequestId;
 }
 
 function buildLineItemBase(
@@ -368,16 +371,51 @@ function buildLineItemBase(
   };
 }
 
+function finitePrice(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * Resolve primary/secondary ICD codes and prices for a claim row.
+ * Prefer values snapshotted on the request; fall back to the portal ICD record.
+ */
+function resolveIcdLinesForClaim(medicalAid, portal) {
+  const primaryCode =
+    (medicalAid.icd10Code && String(medicalAid.icd10Code).trim()) ||
+    (portal?.ICD_10_code && String(portal.ICD_10_code).trim()) ||
+    "";
+
+  const secondaryCode =
+    (medicalAid.secondaryIcd10Code &&
+      String(medicalAid.secondaryIcd10Code).trim()) ||
+    (portal?.secondaryICD_10_code &&
+      String(portal.secondaryICD_10_code).trim()) ||
+    "";
+
+  const primaryPrice =
+    finitePrice(medicalAid.icd10Price) ?? finitePrice(portal?.price);
+
+  const secondaryPrice =
+    finitePrice(medicalAid.secondaryIcd10Price) ??
+    finitePrice(portal?.secondaryPrice);
+
+  return { primaryCode, secondaryCode, primaryPrice, secondaryPrice };
+}
+
 /**
  * Build one or two claim rows for a consultation.
- * A second ICD-10 + price (when configured) becomes a second line item.
+ * When a second ICD-10 + price exists, they are stacked underneath each other
+ * with their own amounts; the PDF TOTAL is the sum of all rows.
  */
 function buildLineItemsForClaim(
   claim,
   providerName,
   practiceNumber,
-  portalMaf,
+  portalInfo,
 ) {
+  const portalMaf = portalInfo?.maf;
+  const portal = portalInfo?.portal || null;
   const base = buildLineItemBase(
     claim,
     providerName,
@@ -385,31 +423,32 @@ function buildLineItemsForClaim(
     portalMaf,
   );
   const medicalAid = base.medicalAid || {};
-  const primaryCode = medicalAid.icd10Code || "—";
-  const secondaryCode = medicalAid.secondaryIcd10Code
-    ? String(medicalAid.secondaryIcd10Code).trim()
-    : "";
-  const totalAmount = Number(
+  const { primaryCode, secondaryCode, primaryPrice, secondaryPrice } =
+    resolveIcdLinesForClaim(medicalAid, portal);
+
+  const consultationTotal = Number(
     claim.request?.consultationCost || claim.request?.estimatedCost || 0,
   );
-  const primaryPrice = Number(medicalAid.icd10Price);
-  const secondaryPrice = Number(medicalAid.secondaryIcd10Price);
 
   if (
+    primaryCode &&
     secondaryCode &&
-    Number.isFinite(primaryPrice) &&
-    Number.isFinite(secondaryPrice)
+    primaryPrice != null &&
+    secondaryPrice != null
   ) {
     return [
       {
         ...base,
         amount: primaryPrice,
         details: `${base.ailmentTitle}\nICD10 ${primaryCode}`,
+        isSecondaryIcdLine: false,
       },
       {
         ...base,
         amount: secondaryPrice,
-        details: `${base.ailmentTitle}\nICD10 ${secondaryCode}`,
+        // Stacked under the primary row — ICD + price only
+        details: `ICD10 ${secondaryCode}`,
+        isSecondaryIcdLine: true,
       },
     ];
   }
@@ -417,8 +456,11 @@ function buildLineItemsForClaim(
   return [
     {
       ...base,
-      amount: totalAmount,
-      details: `${base.ailmentTitle}\nICD10 ${primaryCode}`,
+      amount: Number.isFinite(consultationTotal)
+        ? consultationTotal
+        : primaryPrice ?? 0,
+      details: `${base.ailmentTitle}\nICD10 ${primaryCode || "—"}`,
+      isSecondaryIcdLine: false,
     },
   ];
 }
@@ -487,13 +529,13 @@ async function streamMedicalAidClaimPdf(res, options) {
     provider?.practiceNumber || provider?.hpcnaNumber || "—";
   const providerPhone = String(provider?.cellphoneNumber || "").trim();
 
-  const portalMafs = await resolvePortalMafsForClaims(claims);
+  const portalIcds = await resolvePortalIcdForClaims(claims);
   const lineItems = claims.flatMap((claim) =>
     buildLineItemsForClaim(
       claim,
       providerName,
       practiceNumber,
-      portalMafs.get(String(claim.request?._id)),
+      portalIcds.get(String(claim.request?._id)),
     ),
   );
 
@@ -676,7 +718,7 @@ async function streamMedicalAidClaimPdf(res, options) {
 
   drawTableHeader();
 
-  // Line items (one row per selected consultation)
+  // Line items — dual ICD consultations stack as two rows (code + price), then TOTAL
   lineItems.forEach((item) => {
     if (y > pageBottom - 120) {
       doc.addPage();
@@ -686,27 +728,35 @@ async function streamMedicalAidClaimPdf(res, options) {
 
     doc.font("Helvetica").fontSize(8).fillColor("#111827");
     const rowStartY = y;
+    const isContinuation = Boolean(item.isSecondaryIcdLine);
+    const dateText = isContinuation ? "" : formatDate(item.consultationDate);
+    const providerText = isContinuation ? "" : item.providerName;
+    const patientText = isContinuation ? "" : item.patientName;
+    const practiceText = isContinuation ? "" : String(item.practiceNumber);
+
     const cellHeights = [
-      doc.heightOfString(formatDate(item.consultationDate), {
-        width: cols[0].w,
-      }),
-      doc.heightOfString(item.providerName, { width: cols[1].w }),
-      doc.heightOfString(item.patientName, { width: cols[2].w }),
-      doc.heightOfString(String(item.practiceNumber), { width: cols[3].w }),
+      dateText ? doc.heightOfString(dateText, { width: cols[0].w }) : 0,
+      providerText ? doc.heightOfString(providerText, { width: cols[1].w }) : 0,
+      patientText ? doc.heightOfString(patientText, { width: cols[2].w }) : 0,
+      practiceText ? doc.heightOfString(practiceText, { width: cols[3].w }) : 0,
       doc.heightOfString(item.details, { width: cols[4].w }),
       doc.heightOfString(formatMoney(item.amount), { width: cols[5].w }),
       doc.heightOfString(formatMoney(item.amount), { width: cols[6].w }),
     ];
-    const rowHeight = Math.max(24, ...cellHeights) + 10;
+    const rowHeight = Math.max(isContinuation ? 18 : 24, ...cellHeights) + 8;
 
-    doc.text(formatDate(item.consultationDate), cols[0].x, rowStartY, {
-      width: cols[0].w,
-    });
-    doc.text(item.providerName, cols[1].x, rowStartY, { width: cols[1].w });
-    doc.text(item.patientName, cols[2].x, rowStartY, { width: cols[2].w });
-    doc.text(String(item.practiceNumber), cols[3].x, rowStartY, {
-      width: cols[3].w,
-    });
+    if (dateText) {
+      doc.text(dateText, cols[0].x, rowStartY, { width: cols[0].w });
+    }
+    if (providerText) {
+      doc.text(providerText, cols[1].x, rowStartY, { width: cols[1].w });
+    }
+    if (patientText) {
+      doc.text(patientText, cols[2].x, rowStartY, { width: cols[2].w });
+    }
+    if (practiceText) {
+      doc.text(practiceText, cols[3].x, rowStartY, { width: cols[3].w });
+    }
     doc.text(item.details, cols[4].x, rowStartY, { width: cols[4].w });
     doc.text(formatMoney(item.amount), cols[5].x, rowStartY, {
       width: cols[5].w,
