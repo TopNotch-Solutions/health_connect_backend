@@ -719,7 +719,9 @@ io.on("connection", (socket) => {
       if (normalizedPaymentMethod === "medical_aid") {
         linkedIcd = await Icd10.findOne({
           alignments: ailmentCategoryId,
-        }).select("_id ICD_10_code MAF price");
+        }).select(
+          "_id ICD_10_code MAF price secondaryICD_10_code secondaryPrice",
+        );
 
         if (!linkedIcd) {
           socket.emit("requestError", {
@@ -836,6 +838,14 @@ io.on("connection", (socket) => {
         // Prefer dedicated MAF; fall back to ICD-10 for older portal records
         const claimMaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
 
+        const primaryIcdPrice = Number(linkedIcd.price);
+        const secondaryIcdPrice =
+          linkedIcd.secondaryICD_10_code &&
+          linkedIcd.secondaryPrice != null &&
+          Number.isFinite(Number(linkedIcd.secondaryPrice))
+            ? Number(linkedIcd.secondaryPrice)
+            : null;
+
         resolvedMedicalAidDetails = {
           medicalAidId: medicalAid._id,
           medicalAidTitle: medicalAid.title,
@@ -848,13 +858,30 @@ io.on("connection", (socket) => {
           postalAddress: postalSnapshot,
           icd10Id: linkedIcd._id,
           icd10Code: linkedIcd.ICD_10_code,
+          icd10Price: primaryIcdPrice,
+          ...(linkedIcd.secondaryICD_10_code
+            ? {
+                secondaryIcd10Code: String(linkedIcd.secondaryICD_10_code),
+                secondaryIcd10Price: secondaryIcdPrice,
+              }
+            : {}),
         };
       }
 
-      // Medical aid consultations use the ICD-10 price; otherwise use ailment costs.
+      // Medical aid consultations use the ICD-10 price(s); otherwise use ailment costs.
+      // When a second ICD + price is configured, consultation cost is the sum.
+      const medicalAidIcdCost =
+        linkedIcd != null
+          ? Number(linkedIcd.price || 0) +
+            (linkedIcd.secondaryICD_10_code &&
+            linkedIcd.secondaryPrice != null &&
+            Number.isFinite(Number(linkedIcd.secondaryPrice))
+              ? Number(linkedIcd.secondaryPrice)
+              : 0)
+          : null;
       const selectedCost =
         normalizedPaymentMethod === "medical_aid"
-          ? linkedIcd?.price
+          ? medicalAidIcdCost
           : consultationMode === "video_consultation"
             ? ailmentCategory.teleconsultationCost
             : ailmentCategory.physicalconsultationCost;
@@ -1215,7 +1242,9 @@ io.on("connection", (socket) => {
         .sort({ createdAt: -1 });
 
       const icdLinks = await Icd10.find()
-        .select("ICD_10_code MAF alignments price")
+        .select(
+          "ICD_10_code MAF alignments price secondaryICD_10_code secondaryPrice",
+        )
         .lean();
 
       const icdByAilmentId = new Map();
@@ -1230,6 +1259,11 @@ io.on("connection", (socket) => {
             ICD_10_code: icd.ICD_10_code,
             MAF: icd.MAF || icd.ICD_10_code,
             price: icd.price,
+            secondaryICD_10_code: icd.secondaryICD_10_code || null,
+            secondaryPrice:
+              icd.secondaryPrice !== undefined && icd.secondaryPrice !== null
+                ? icd.secondaryPrice
+                : null,
           });
         }
       }

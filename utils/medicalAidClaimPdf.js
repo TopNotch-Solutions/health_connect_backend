@@ -330,7 +330,7 @@ async function resolvePortalMafsForClaims(claims) {
   return mafByRequestId;
 }
 
-function buildLineItem(
+function buildLineItemBase(
   { request, patient, ailment },
   providerName,
   practiceNumber,
@@ -347,11 +347,7 @@ function buildLineItem(
     request.updatedAt ||
     request.createdAt;
   const patientName = patientDisplayName(request, patient);
-  const icd10 = medicalAid.icd10Code || "—";
   const ailmentTitle = ailment?.title || "Consultation";
-  const amount = Number(
-    request.consultationCost || request.estimatedCost || 0,
-  );
 
   return {
     consultationDate,
@@ -366,11 +362,65 @@ function buildLineItem(
     patientPhone: String(patient?.cellphoneNumber || "").trim(),
     medicalAid,
     request,
-    amount,
     providerName,
     practiceNumber,
-    details: `${ailmentTitle}\nICD10 ${icd10}`,
+    ailmentTitle,
   };
+}
+
+/**
+ * Build one or two claim rows for a consultation.
+ * A second ICD-10 + price (when configured) becomes a second line item.
+ */
+function buildLineItemsForClaim(
+  claim,
+  providerName,
+  practiceNumber,
+  portalMaf,
+) {
+  const base = buildLineItemBase(
+    claim,
+    providerName,
+    practiceNumber,
+    portalMaf,
+  );
+  const medicalAid = base.medicalAid || {};
+  const primaryCode = medicalAid.icd10Code || "—";
+  const secondaryCode = medicalAid.secondaryIcd10Code
+    ? String(medicalAid.secondaryIcd10Code).trim()
+    : "";
+  const totalAmount = Number(
+    claim.request?.consultationCost || claim.request?.estimatedCost || 0,
+  );
+  const primaryPrice = Number(medicalAid.icd10Price);
+  const secondaryPrice = Number(medicalAid.secondaryIcd10Price);
+
+  if (
+    secondaryCode &&
+    Number.isFinite(primaryPrice) &&
+    Number.isFinite(secondaryPrice)
+  ) {
+    return [
+      {
+        ...base,
+        amount: primaryPrice,
+        details: `${base.ailmentTitle}\nICD10 ${primaryCode}`,
+      },
+      {
+        ...base,
+        amount: secondaryPrice,
+        details: `${base.ailmentTitle}\nICD10 ${secondaryCode}`,
+      },
+    ];
+  }
+
+  return [
+    {
+      ...base,
+      amount: totalAmount,
+      details: `${base.ailmentTitle}\nICD10 ${primaryCode}`,
+    },
+  ];
 }
 
 function buildLeftAddressBlock(lineItems, samePatient) {
@@ -438,8 +488,8 @@ async function streamMedicalAidClaimPdf(res, options) {
   const providerPhone = String(provider?.cellphoneNumber || "").trim();
 
   const portalMafs = await resolvePortalMafsForClaims(claims);
-  const lineItems = claims.map((claim) =>
-    buildLineItem(
+  const lineItems = claims.flatMap((claim) =>
+    buildLineItemsForClaim(
       claim,
       providerName,
       practiceNumber,

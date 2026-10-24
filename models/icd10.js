@@ -18,6 +18,17 @@ const icd10Schema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    // Optional second ICD-10 code + price for the same alignment/claim
+    secondaryICD_10_code: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    secondaryPrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
     specializations: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "specialization",

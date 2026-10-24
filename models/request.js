@@ -135,6 +135,10 @@ const consultationRequestSchema = new mongoose.Schema(
         ref: "Icd10",
       },
       icd10Code: { type: String },
+      // Optional second ICD-10 (and prices) snapshotted from the portal ICD record
+      secondaryIcd10Code: { type: String },
+      icd10Price: { type: Number },
+      secondaryIcd10Price: { type: Number },
     },
     // Provider Namibian postal address snapshot (set when accepting medical_aid)
     providerPostalAddress: {

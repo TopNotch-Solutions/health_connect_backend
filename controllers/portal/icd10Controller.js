@@ -34,9 +34,64 @@ const normalizeObjectIdArray = (value, fieldName) => {
   return { ids };
 };
 
+/**
+ * Optional second ICD-10 + price. Both must be set together, or both cleared.
+ * Returns { secondaryICD_10_code, secondaryPrice } or { error }.
+ */
+const normalizeSecondaryIcd = (
+  secondaryICD_10_code,
+  secondaryPrice,
+  primaryCode,
+) => {
+  const hasCode =
+    secondaryICD_10_code !== undefined &&
+    secondaryICD_10_code !== null &&
+    String(secondaryICD_10_code).trim() !== "";
+  const priceRaw = secondaryPrice;
+  const hasPriceInput =
+    priceRaw !== undefined &&
+    priceRaw !== null &&
+    String(priceRaw).trim() !== "";
+
+  if (!hasCode && !hasPriceInput) {
+    return { secondaryICD_10_code: null, secondaryPrice: null };
+  }
+
+  if (hasCode !== hasPriceInput) {
+    return {
+      error:
+        "Second ICD-10 code and second price must both be provided, or both left empty.",
+    };
+  }
+
+  const code = String(secondaryICD_10_code).trim().toUpperCase();
+  if (primaryCode && code === String(primaryCode).trim().toUpperCase()) {
+    return {
+      error: "Second ICD-10 code must be different from the primary ICD-10 code.",
+    };
+  }
+
+  const parsed = parseFloat(priceRaw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return {
+      error: "Second price must be a non-negative number",
+    };
+  }
+
+  return { secondaryICD_10_code: code, secondaryPrice: parsed };
+};
+
 exports.create = async (req, res) => {
   try {
-    const { ICD_10_code, MAF, price, specializations, alignments } = req.body;
+    const {
+      ICD_10_code,
+      MAF,
+      price,
+      secondaryICD_10_code,
+      secondaryPrice,
+      specializations,
+      alignments,
+    } = req.body;
 
     if (!ICD_10_code || String(ICD_10_code).trim() === "") {
       return res.status(400).json({
@@ -60,6 +115,19 @@ exports.create = async (req, res) => {
       });
     }
 
+    const code = String(ICD_10_code).trim().toUpperCase();
+    const secondary = normalizeSecondaryIcd(
+      secondaryICD_10_code,
+      secondaryPrice,
+      code,
+    );
+    if (secondary.error) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: secondary.error,
+      });
+    }
+
     const specs = normalizeObjectIdArray(specializations, "specialization");
     if (specs.error) {
       return res.status(400).json({ status: "FAILURE", message: specs.error });
@@ -70,7 +138,6 @@ exports.create = async (req, res) => {
       return res.status(400).json({ status: "FAILURE", message: aligns.error });
     }
 
-    const code = String(ICD_10_code).trim().toUpperCase();
     const maf = String(MAF).trim().toUpperCase();
     const existing = await Icd10.findOne({ ICD_10_code: code });
     if (existing) {
@@ -84,6 +151,8 @@ exports.create = async (req, res) => {
       ICD_10_code: code,
       MAF: maf,
       price: parsedPrice,
+      secondaryICD_10_code: secondary.secondaryICD_10_code,
+      secondaryPrice: secondary.secondaryPrice,
       specializations: specs.ids,
       alignments: aligns.ids,
     });
@@ -168,7 +237,15 @@ exports.get = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { ICD_10_code, MAF, price, specializations, alignments } = req.body;
+    const {
+      ICD_10_code,
+      MAF,
+      price,
+      secondaryICD_10_code,
+      secondaryPrice,
+      specializations,
+      alignments,
+    } = req.body;
 
     const item = await Icd10.findById(id);
     if (!item) {
@@ -219,6 +296,24 @@ exports.update = async (req, res) => {
         });
       }
       item.price = parsedPrice;
+    }
+
+    if (secondaryICD_10_code !== undefined || secondaryPrice !== undefined) {
+      const secondary = normalizeSecondaryIcd(
+        secondaryICD_10_code !== undefined
+          ? secondaryICD_10_code
+          : item.secondaryICD_10_code,
+        secondaryPrice !== undefined ? secondaryPrice : item.secondaryPrice,
+        item.ICD_10_code,
+      );
+      if (secondary.error) {
+        return res.status(400).json({
+          status: "FAILURE",
+          message: secondary.error,
+        });
+      }
+      item.secondaryICD_10_code = secondary.secondaryICD_10_code;
+      item.secondaryPrice = secondary.secondaryPrice;
     }
 
     if (specializations !== undefined) {
