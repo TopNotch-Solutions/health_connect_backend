@@ -221,7 +221,6 @@ exports.registerHealthProvider = async (req, res) => {
     settlementCellNumber,
     hpcnaLicenseExpiryAcknowledged,
   } = req.body;
-  console.log(req.body);
   const files = req.files;
 
   let profileImagePath = files.profileImage
@@ -490,7 +489,6 @@ exports.verifyOtpReset = async (req, res) => {
     const otpRecord = await OTP.findOne({
       cellphoneNumber,
     });
-    console.log("My opt", otpRecord);
 
     if (!otpRecord) {
       return res.status(400).json({
@@ -560,7 +558,7 @@ exports.resetPassword = async (req, res) => {
   if (!result.valid) {
     return res.status(400).json({ message: result?.message });
   }
-  if (password.toLowerCase() !== confirmPassword.toLowerCase()) {
+  if (password !== confirmPassword) {
     return res
       .status(400)
       .json({ message: "Password and confirm password do not match." });

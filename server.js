@@ -9,6 +9,8 @@ const http = require("http");
 const { Server } = require("socket.io");
 const schedule = require("node-schedule");
 require("dotenv").config();
+const { setIO } = require("./utils/socketIo");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +22,35 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
   pingInterval: 25000,
   pingTimeout: 60000,
+});
+setIO(io);
+
+/**
+ * Require a valid login JWT on the socket handshake.
+ * Identity (userId / role) is taken from the token only — never from the client.
+ */
+io.use((socket, next) => {
+  try {
+    const token =
+      socket.handshake?.auth?.token ||
+      socket.handshake?.query?.token ||
+      null;
+    if (!token || typeof token !== "string") {
+      return next(new Error("Authentication required"));
+    }
+    const decoded = jwt.verify(token, process.env.MOBILE_TOKEN);
+    // Reject bootstrap appUser tokens — only real user sessions may join.
+    if (!decoded?.id || decoded.role === "appUser" || decoded.portal === true) {
+      return next(new Error("Invalid session token"));
+    }
+    socket.authUserId = String(decoded.id);
+    socket.authRole = String(decoded.role || "")
+      .trim()
+      .toLowerCase();
+    return next();
+  } catch (err) {
+    return next(new Error("Authentication failed"));
+  }
 });
 
 const authRouter = require("./routes/common/authRoute");
@@ -147,7 +178,6 @@ const authLimiter = rateLimit({
   message: { message: "Too many attempts. Please try again in a few minutes." },
 });
 
-app.use(express.static("public"));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
@@ -163,12 +193,87 @@ app.use(
   }),
 );
 
+/**
+ * Sensitive uploads (ID docs, certificates, prescriptions) require a JWT
+ * (header or ?access_token=). Public marketing assets stay open.
+ */
+const SENSITIVE_STATIC_RE =
+  /(id[-_]?document|certificate|prescription|qualification|hpcna|licence|license|dispensing)/i;
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const pathname = String(req.path || "");
+  if (!SENSITIVE_STATIC_RE.test(pathname)) return next();
+
+  const authHeader =
+    req.header("x-access-token") ||
+    req.header("authorization") ||
+    req.header("Authorization") ||
+    "";
+  const headerToken = authHeader
+    ? authHeader.trim().split(/\s+/).pop()
+    : null;
+  const token =
+    headerToken ||
+    (typeof req.query.access_token === "string"
+      ? req.query.access_token
+      : null);
+  if (!token) {
+    return res.status(401).json({
+      status: "FAILURE",
+      message: "Authentication required to access this document.",
+    });
+  }
+  try {
+    const secrets = [
+      process.env.MOBILE_TOKEN,
+      process.env.PORTAL_TOKEN,
+    ].filter(Boolean);
+    let verified = false;
+    for (const secret of secrets) {
+      try {
+        jwt.verify(token, secret);
+        verified = true;
+        break;
+      } catch {
+        // try next secret
+      }
+    }
+    if (!verified) {
+      return res.status(401).json({
+        status: "FAILURE",
+        message: "Invalid or expired token.",
+      });
+    }
+    return next();
+  } catch {
+    return res.status(401).json({
+      status: "FAILURE",
+      message: "Invalid or expired token.",
+    });
+  }
+});
+
+app.use(express.static("public"));
+
 app.use("/api", generalLimiter);
 // Applied before the routers below so it covers login, registration,
 // password reset and OTP.
 app.use("/api/auth", authLimiter);
 app.use("/api/app/auth", authLimiter);
 app.use("/api/portal/auth", authLimiter);
+
+// Bootstrap JWT minting is public but tightly rate-limited.
+const bootstrapTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    message: "Too many token requests. Please try again in a few minutes.",
+  },
+});
+app.use("/api/app/auth/retrieve-jwt-token", bootstrapTokenLimiter);
 
 // Every portal route requires a portal JWT except login itself. This sits
 // above all /api/portal mounts so nothing can be added below it unguarded.
@@ -559,19 +664,41 @@ io.on("connection", (socket) => {
   };
 
   socket.on("join", (data) => {
-    const rawRole = data?.role;
-    const rawUserId = data?.userId;
-    const normalizedRole = normalizeRole(rawRole);
-    const normalizedUserId =
-      rawUserId === undefined || rawUserId === null
-        ? null
-        : String(rawUserId).trim();
+    // Identity comes from the verified JWT only (set in io.use).
+    const normalizedUserId = socket.authUserId
+      ? String(socket.authUserId).trim()
+      : null;
+    const tokenRole = normalizeRole(socket.authRole);
+    const requestedRole = normalizeRole(data?.role);
+    // Prefer token role; allow client role only if it matches the token role.
+    const normalizedRole =
+      tokenRole ||
+      (requestedRole &&
+      socket.authRole &&
+      requestedRole === String(socket.authRole).toLowerCase()
+        ? requestedRole
+        : null) ||
+      requestedRole;
 
-    if (!normalizedRole) {
-      console.warn("Socket join rejected due to invalid role", {
+    if (!normalizedRole || !normalizedUserId) {
+      console.warn("Socket join rejected due to missing auth identity", {
         socketId: socket.id,
-        role: rawRole,
-        userId: rawUserId,
+      });
+      socket.emit("requestError", {
+        error: "Authentication required. Please sign in again.",
+      });
+      return;
+    }
+
+    // If token has a role, client cannot escalate to a different role.
+    if (tokenRole && requestedRole && tokenRole !== requestedRole) {
+      console.warn("Socket join rejected due to role mismatch", {
+        socketId: socket.id,
+        tokenRole,
+        requestedRole,
+      });
+      socket.emit("requestError", {
+        error: "Role mismatch. Please sign in again.",
       });
       return;
     }
@@ -588,10 +715,7 @@ io.on("connection", (socket) => {
       socket.providerLocation = joinLocation;
     }
 
-    // Store socket for user if userId provided
-    if (normalizedUserId) {
-      userSockets.set(normalizedUserId, socket.id);
-    }
+    userSockets.set(normalizedUserId, socket.id);
 
     const update = buildOnlineUsersUpdate();
     io.emit("onlineUsersUpdate", update);
@@ -600,7 +724,6 @@ io.on("connection", (socket) => {
       `User ${socket.id} joined as ${normalizedRole}. Total online: ${update.total}`,
       {
         userId: normalizedUserId,
-        rawRole,
         hasLocation: Boolean(joinLocation),
       },
     );
@@ -619,7 +742,6 @@ io.on("connection", (socket) => {
   socket.on("createRequest", async (data) => {
     try {
       const {
-        patientId,
         ailmentCategoryId,
         address,
         paymentMethod,
@@ -627,7 +749,21 @@ io.on("connection", (socket) => {
         medicalAidDetails,
       } = data;
 
-      console.log(data);
+      // Always create as the authenticated socket user — never trust client patientId.
+      const patientId = socket.userId || socket.authUserId;
+      if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        socket.emit("requestError", {
+          error: "Authentication required. Please sign in again.",
+        });
+        return;
+      }
+      if (socket.role && socket.role !== "patient") {
+        socket.emit("requestError", {
+          error: "Only patients can create consultation requests.",
+        });
+        return;
+      }
+
       // Active statuses where a patient is considered to have an ongoing request
       const activePatientStatuses = [
         "searching",
@@ -643,7 +779,6 @@ io.on("connection", (socket) => {
         "in_progress",
       ];
 
-      // Convert patientId to ObjectId (patientId is always a valid ObjectId)
       const validPatientId = new mongoose.Types.ObjectId(patientId);
 
       const patient = await User.findById(validPatientId);
@@ -948,70 +1083,62 @@ io.on("connection", (socket) => {
         io.to(patientSocketId).emit("requestCreated", request);
       }
 
-      // Notify all providers about new available request
-      // Only notify providers that are not currently busy and match the ailment specialization
-      const populatedAilmentCategory = request.ailmentCategoryId;
-
+      // Notify matching online providers (batched DB lookups — avoid N+1)
+      const providerCandidates = [];
       for (const [socketUserId, socketId] of userSockets.entries()) {
         const targetSocket = io.sockets.sockets.get(socketId);
         if (
           !targetSocket ||
           !targetSocket.role ||
           targetSocket.role === "patient"
-        )
+        ) {
           continue;
-
-        // Find provider by _id to determine busy status
-        let provider = null;
-        if (mongoose.Types.ObjectId.isValid(socketUserId)) {
-          provider = await User.findById(socketUserId);
         }
-        if (!provider) {
-          provider = null;
-        }
+        if (!mongoose.Types.ObjectId.isValid(socketUserId)) continue;
+        providerCandidates.push({
+          socketUserId,
+          socketId,
+          targetSocket,
+        });
+      }
 
-        const visibilityCheck = providerCanSeeRequest(
-          provider,
-          request,
-          targetSocket.providerLocation,
+      if (providerCandidates.length > 0) {
+        const providerIds = providerCandidates.map((c) => c.socketUserId);
+        const providers = await User.find({ _id: { $in: providerIds } });
+        const providerById = new Map(
+          providers.map((p) => [String(p._id), p]),
         );
-        if (!visibilityCheck.allowed) {
-          console.log("Skipping realtime request push:", {
-            providerId: socketUserId,
-            requestId: request._id,
-            reason: visibilityCheck.reason,
-            distanceInKm: visibilityCheck.distanceInKm,
-            allowedRadiusKm: visibilityCheck.allowedRadiusKm,
-            ailmentProvider: populatedAilmentCategory?.provider,
-          });
-          continue;
-        }
 
-        let providerObjectId = provider ? provider._id : null;
+        const busyRows = await ConsultationRequest.find({
+          providerId: { $in: providerIds },
+          status: { $in: PROVIDER_ACTIVE_STATUSES },
+        })
+          .select("providerId")
+          .lean();
+        const busyProviderIds = new Set(
+          busyRows.map((row) => String(row.providerId)),
+        );
 
-        // If provider record not found yet (e.g., first time), treat as not busy
-        let isBusy = false;
-        if (providerObjectId) {
-          const activeForProvider = await ConsultationRequest.findOne({
-            providerId: providerObjectId,
-            status: { $in: PROVIDER_ACTIVE_STATUSES },
-          }).select("_id");
-          isBusy = Boolean(activeForProvider);
-        }
+        for (const candidate of providerCandidates) {
+          const provider = providerById.get(candidate.socketUserId) || null;
+          const visibilityCheck = providerCanSeeRequest(
+            provider,
+            request,
+            candidate.targetSocket.providerLocation,
+          );
+          if (!visibilityCheck.allowed) continue;
+          if (busyProviderIds.has(candidate.socketUserId)) continue;
 
-        if (!isBusy) {
-          io.to(socketId).emit("newRequestAvailable", request);
+          io.to(candidate.socketId).emit("newRequestAvailable", request);
 
-          // Send push notification
-          const providerUser = provider;
-          if (providerUser) {
-            // Create persistent notification
+          if (provider) {
             try {
               await Notification.createNotification({
-                userId: providerUser._id,
+                userId: provider._id,
                 type: "consultation_requested",
                 title: "New Consultation Request",
-                message: "A new patient is requesting a consultation nearby.",
+                message:
+                  "A new patient is requesting a consultation nearby.",
                 status: "sent",
                 data: { requestId: request._id },
               });
@@ -1019,9 +1146,9 @@ io.on("connection", (socket) => {
               console.error("Error creating notification:", err);
             }
 
-            if (providerUser.expoPushToken) {
+            if (provider.expoPushToken) {
               sendPushNotification(
-                providerUser.expoPushToken,
+                provider.expoPushToken,
                 "New Consultation Request",
                 "A new patient is requesting a consultation nearby.",
                 {
@@ -1039,11 +1166,16 @@ io.on("connection", (socket) => {
   });
 
   // Get requests for patient
-  socket.on("getPatientRequests", async (data) => {
+  socket.on("getPatientRequests", async () => {
     try {
-      const { patientId } = data;
+      const patientId = socket.userId || socket.authUserId;
+      if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        socket.emit("requestError", {
+          error: "Authentication required. Please sign in again.",
+        });
+        return;
+      }
 
-      // Convert patientId to ObjectId (patientId is always a valid ObjectId)
       const validPatientId = new mongoose.Types.ObjectId(patientId);
 
       const requests = await ConsultationRequest.find({
@@ -1063,16 +1195,20 @@ io.on("connection", (socket) => {
   // Get available requests for providers (paginated; default 20 per page)
   socket.on("getAvailableRequests", async (data = {}) => {
     try {
-      const { providerId, providerLocation, latitude, longitude } = data;
+      // Always use authenticated socket identity — never trust client providerId.
+      const providerId = socket.userId || socket.authUserId;
+      const { providerLocation, latitude, longitude } = data;
       const page = Math.max(1, parseInt(data.page, 10) || 1);
       const limit = Math.min(
         100,
         Math.max(1, parseInt(data.limit, 10) || 20),
       );
-      console.log("🔍 getAvailableRequests handler - providerId:", providerId, {
-        page,
-        limit,
-      });
+      if (!providerId || !mongoose.Types.ObjectId.isValid(providerId)) {
+        socket.emit("requestError", {
+          error: "Authentication required. Please sign in again.",
+        });
+        return;
+      }
 
       const emitAvailableRequests = (requestsList) => {
         const total = Array.isArray(requestsList) ? requestsList.length : 0;
@@ -1116,70 +1252,61 @@ io.on("connection", (socket) => {
       }
       socket.providerLocation = parsedProviderCoordinates;
 
-      // Get provider details to check specializations
-      // Try to get providerId from data first, then fallback to socket.userId
-      const identifier = providerId || socket.userId;
-      let provider = null;
-      let validProviderId = null;
-
-      if (!identifier) {
+      const validProviderId = new mongoose.Types.ObjectId(providerId);
+      const provider = await User.findById(validProviderId);
+      if (!provider) {
         socket.emit("requestError", {
           error:
-            "Provider identification is required to get available requests.",
+            "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
         });
         return;
       }
 
-      // Get provider by identifier (_id only)
-      if (!mongoose.Types.ObjectId.isValid(identifier)) {
-        provider = null;
-        if (provider) {
-          validProviderId = provider._id; // Use ObjectId directly for queries
-        } else {
-          socket.emit("requestError", {
-            error:
-              "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
-          });
-          return;
-        }
-      } else {
-        validProviderId = new mongoose.Types.ObjectId(identifier);
-        provider = await User.findById(validProviderId);
-        if (!provider) {
-          socket.emit("requestError", {
-            error:
-              "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
-          });
-          return;
-        }
-      }
-
-      console.log("🔍 Converted providerId to:", validProviderId);
-
       // Busy if any active consultation
-      if (validProviderId) {
-        const activeForProvider = await ConsultationRequest.findOne({
-          providerId: validProviderId,
-          status: { $in: PROVIDER_ACTIVE_STATUSES },
-        }).select("_id");
-        if (activeForProvider) {
-          console.log(
-            "⚠️ Provider is busy with request:",
-            activeForProvider._id,
-          );
-          emitAvailableRequests([]);
-          return;
-        }
+      const activeForProvider = await ConsultationRequest.findOne({
+        providerId: validProviderId,
+        status: { $in: PROVIDER_ACTIVE_STATUSES },
+      }).select("_id");
+      if (activeForProvider) {
+        emitAvailableRequests([]);
+        return;
       }
 
-      // Simplified query: Just show requests with status "searching"
-      // Providers will see requests that haven't been claimed yet
-      const availabilityFilter = { status: "searching" };
+      // Pre-filter in Mongo by provider type when the ailment has a provider field.
+      // Distance/specialization fallback still applied in memory.
+      const roleMapping = {
+        doctor: "Doctor",
+        nurse: "Nurse",
+        physiotherapist: "Physiotherapist",
+        "social worker": "Social Worker",
+        pharmacist: "Pharmacist",
+      };
+      const expectedProviderType =
+        roleMapping[String(provider.role || "").toLowerCase()];
 
-      console.log(
-        "🔍 Executing query with simplified filter:",
-        JSON.stringify(availabilityFilter, null, 2),
-      );
+      let matchingAilmentIds = null;
+      if (expectedProviderType) {
+        matchingAilmentIds = await AilmentCategory.find({
+          $or: [
+            { provider: expectedProviderType },
+            { provider: { $exists: false } },
+            { provider: null },
+            { provider: "" },
+          ],
+        })
+          .select("_id")
+          .lean();
+        matchingAilmentIds = matchingAilmentIds.map((a) => a._id);
+      }
+
+      const availabilityFilter = {
+        status: "searching",
+        ...(matchingAilmentIds
+          ? { ailmentCategoryId: { $in: matchingAilmentIds } }
+          : {}),
+      };
+
+      // Cap candidates before distance filter to keep polls cheap under load
       const requests = await ConsultationRequest.find(availabilityFilter)
         .populate("patientId", "fullname cellphoneNumber")
         .populate({
@@ -1189,50 +1316,17 @@ io.on("connection", (socket) => {
             select: "title",
           },
         })
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .limit(200);
 
-      // Always filter requests based on provider specialization and dynamic distance window
       const filteredRequests = requests.filter((request) => {
         const visibilityCheck = providerCanSeeRequest(
           provider,
           request,
           parsedProviderCoordinates,
         );
-        if (!visibilityCheck.allowed) {
-          const ailmentCategory = request.ailmentCategoryId;
-          console.log("🚫 Request hidden from provider:", {
-            requestId: request._id?.toString(),
-            providerId: validProviderId?.toString(),
-            providerRole: provider?.role,
-            providerSpecializations: provider?.specializations,
-            ailmentProvider: ailmentCategory?.provider,
-            ailmentSpecializations: ailmentCategory?.specialization?.map(
-              (specialization) => specialization?.title || specialization,
-            ),
-            reason: visibilityCheck.reason,
-            distanceInKm: visibilityCheck.distanceInKm,
-            allowedRadiusKm: visibilityCheck.allowedRadiusKm,
-            providerCoordinates: parsedProviderCoordinates,
-            patientCoordinates: getPatientCoordinatesFromRequest(request),
-          });
-        }
         return visibilityCheck.allowed;
       });
-      console.log(
-        `✅ Filtered requests from ${requests.length} to ${filteredRequests.length} using specialization and dynamic radius (1km/${SEARCH_RADIUS_STEP_MINUTES}min up to ${SEARCH_RADIUS_MAX_KM}km)`,
-      );
-
-      console.log("✅ Found requests count:", filteredRequests.length);
-      console.log(
-        "✅ Requests IDs:",
-        filteredRequests.map((r) => r._id),
-      );
-      if (filteredRequests.length > 0) {
-        console.log(
-          "✅ First request:",
-          JSON.stringify(filteredRequests[0], null, 2),
-        );
-      }
       emitAvailableRequests(filteredRequests);
     } catch (error) {
       console.error("❌ getAvailableRequests error:", error);
@@ -1247,11 +1341,15 @@ io.on("connection", (socket) => {
         .populate("specialization")
         .sort({ createdAt: -1 });
 
-      const icdLinks = await Icd10.find()
-        .select(
-          "ICD_10_code MAF alignments price secondaryICD_10_code secondaryMAF secondaryPrice",
-        )
-        .lean();
+      const categoryIds = categories.map((c) => c._id);
+      // Only load ICD records aligned to the returned ailments (not the full collection).
+      const icdLinks = categoryIds.length
+        ? await Icd10.find({ alignments: { $in: categoryIds } })
+            .select(
+              "ICD_10_code MAF alignments price secondaryICD_10_code secondaryMAF secondaryPrice",
+            )
+            .lean()
+        : [];
 
       const icdByAilmentId = new Map();
       for (const icd of icdLinks) {
@@ -2643,7 +2741,16 @@ io.on("connection", (socket) => {
   // Cancel request
   socket.on("cancelRequest", async (data) => {
     try {
-      const { requestId, cancelledBy, reason } = data;
+      const { requestId, reason } = data;
+      const authUserId = socket.userId || socket.authUserId;
+      if (!authUserId || !mongoose.Types.ObjectId.isValid(authUserId)) {
+        socket.emit("requestError", {
+          error:
+            "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
+        });
+        return;
+      }
+
       const request = await ConsultationRequest.findById(requestId);
 
       if (!request) {
@@ -2657,29 +2764,29 @@ io.on("connection", (socket) => {
       // Store original status before cancellation to check if provider should become available
       const originalStatus = request.status;
 
+      const isAssignedProvider =
+        request.providerId &&
+        request.providerId.toString() === String(authUserId);
+      const isOwningPatient =
+        request.patientId &&
+        request.patientId.toString() === String(authUserId);
+
+      // Derive cancelledBy from ownership — never trust the client claim alone.
+      let cancelledBy = null;
+      if (isAssignedProvider && socket.role !== "patient") {
+        cancelledBy = "provider";
+      } else if (isOwningPatient) {
+        cancelledBy = "patient";
+      } else {
+        socket.emit("requestError", {
+          error:
+            "You are not allowed to cancel this consultation request.",
+        });
+        return;
+      }
+
       // Validate cancellation - provider can only cancel before arrival
       if (cancelledBy === "provider") {
-        if (!mongoose.Types.ObjectId.isValid(socket.userId)) {
-          socket.emit("requestError", {
-            error:
-              "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
-          });
-          return;
-        }
-        const validProviderId = new mongoose.Types.ObjectId(socket.userId);
-
-        // Check if this provider is assigned to this request
-        if (
-          !request.providerId ||
-          request.providerId.toString() !== validProviderId.toString()
-        ) {
-          socket.emit("requestError", {
-            error:
-              "You are not assigned to this consultation request. Only the assigned provider can cancel this request.",
-          });
-          return;
-        }
-
         // Provider can only cancel before arrival
         if (["arrived", "in_progress", "completed"].includes(request.status)) {
           socket.emit("requestError", {
@@ -2802,8 +2909,12 @@ io.on("connection", (socket) => {
     if (socket.role && onlineUsers[socket.role]) {
       onlineUsers[socket.role].delete(socket.id);
 
-      // Remove from userSockets
-      if (socket.userId) {
+      // Only clear mapping if this socket is still the mapped one
+      // (avoids wiping a newer reconnect's socket id).
+      if (
+        socket.userId &&
+        userSockets.get(String(socket.userId)) === socket.id
+      ) {
         userSockets.delete(socket.userId);
       }
 

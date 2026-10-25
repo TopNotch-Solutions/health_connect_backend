@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const MedicalAid = require("../../models/medicalAid");
+const { emitCatalogUpdated } = require("../../utils/socketIo");
 
 const removeImageFile = (filename) => {
   if (!filename) return;
@@ -41,6 +42,8 @@ exports.create = async (req, res) => {
       title: normalizedTitle,
       image: null,
     });
+
+    emitCatalogUpdated("medical_aid");
 
     return res.status(201).json({
       status: "SUCCESS",
@@ -152,6 +155,8 @@ exports.update = async (req, res) => {
       });
     }
 
+    emitCatalogUpdated("medical_aid");
+
     return res.status(200).json({
       status: "SUCCESS",
       data: updated,
@@ -192,6 +197,8 @@ exports.updateImage = async (req, res) => {
     existing.image = imagePath;
     await existing.save();
 
+    emitCatalogUpdated("medical_aid");
+
     return res.status(200).json({
       status: "SUCCESS",
       message: "Medical aid image updated successfully",
@@ -226,6 +233,8 @@ exports.deleteImage = async (req, res) => {
       await existing.save();
     }
 
+    emitCatalogUpdated("medical_aid");
+
     return res.status(200).json({
       status: "SUCCESS",
       message: "Medical aid image deleted successfully",
@@ -256,6 +265,8 @@ exports.delete = async (req, res) => {
     }
 
     await MedicalAid.findByIdAndDelete(id);
+
+    emitCatalogUpdated("medical_aid");
 
     return res.status(200).json({
       status: "SUCCESS",

@@ -2,6 +2,7 @@ const AilmentCategory = require("../../models/ailment");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const path = require("path");
+const { emitCatalogUpdated } = require("../../utils/socketIo");
 
 const parseBooleanish = (value, fallback = false) => {
   if (typeof value === "boolean") return value;
@@ -152,6 +153,7 @@ exports.create = async (req, res) => {
             image,
         });
         await ailment.save();
+        emitCatalogUpdated("ailment");
         res.status(201).json({ message: "Ailment created successfully", ailment });
     }catch (error) {
     console.error("Error creating ailment:", error);
@@ -314,6 +316,7 @@ exports.updateAilment = async (req, res) => {
       );
     }
     await ailment.save();
+    emitCatalogUpdated("ailment");
     res.status(200).json({ message: "Ailment updated successfully", ailment });
     }catch (error) {
     console.error("Error registering patient:", error);
@@ -360,6 +363,7 @@ if (!id) {
 
     existingAilment.image = image;
     await existingAilment.save();
+    emitCatalogUpdated("ailment");
     res.status(200).json({
       status: true,
       message: "Ailment image has been updated successfully",
@@ -377,6 +381,7 @@ exports.deleteAilment = async (req, res) => {
     if (!ailment) {
       return res.status(404).json({ message: "Ailment not found." });
     }
+    emitCatalogUpdated("ailment");
     res.status(200).json({ message: "Ailment deleted successfully." });
     }catch (error) {
     console.error("Error registering patient:", error);

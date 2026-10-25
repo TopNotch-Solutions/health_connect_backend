@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Icd10 = require("../../models/icd10");
+const { emitCatalogUpdated } = require("../../utils/socketIo");
 
 const normalizeObjectIdArray = (value, fieldName) => {
   if (value === undefined) return undefined;
@@ -176,6 +177,8 @@ exports.create = async (req, res) => {
     const populated = await Icd10.findById(created._id)
       .populate("specializations", "title")
       .populate("alignments", "title");
+
+    emitCatalogUpdated("icd10");
 
     return res.status(201).json({
       status: "SUCCESS",
@@ -361,6 +364,8 @@ exports.update = async (req, res) => {
       .populate("specializations", "title")
       .populate("alignments", "title");
 
+    emitCatalogUpdated("icd10");
+
     return res.status(200).json({
       status: "SUCCESS",
       data: populated,
@@ -384,6 +389,8 @@ exports.delete = async (req, res) => {
         message: "ICD-10 code not found",
       });
     }
+
+    emitCatalogUpdated("icd10");
 
     return res.status(200).json({
       status: "SUCCESS",
