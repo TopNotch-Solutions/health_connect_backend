@@ -24,7 +24,7 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No Authorization header provided.",
+      message: "Please sign in again to continue.",
     });
   }
 
@@ -32,7 +32,7 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No token provided.",
+      message: "Please sign in again to continue.",
     });
   }
 
@@ -48,8 +48,8 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
       status: "FAILURE",
       message:
         err.name === "TokenExpiredError"
-          ? "Session expired. Please log in again."
-          : "Invalid token.",
+          ? "Your session has expired. Please sign in again."
+          : "Please sign in again to continue.",
     });
   }
 };
@@ -59,11 +59,13 @@ module.exports.tokenAuthMiddleware = (req, res, next) => {
 // token and retry (see AuthContext login). Changing it would break sign-in
 // for every already-installed version of the app.
 module.exports.appTokenMiddleware = (req, res, next) => {
-  const authHeader = getHeader(req, 'data-access-token', 'authorization', 'Authorization');
+  // Bootstrap / pre-login routes must use the app token only.
+  // Do not fall back to Authorization — that header carries the user session JWT.
+  const authHeader = getHeader(req, 'data-access-token');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No Authorization header provided.",
+      message: "Please wait a moment and try again.",
     });
   }
 
@@ -71,7 +73,7 @@ module.exports.appTokenMiddleware = (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No token provided.",
+      message: "Please wait a moment and try again.",
     });
   }
 
@@ -81,6 +83,7 @@ module.exports.appTokenMiddleware = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (err) {
+    // Keep exact "Invalid token." + 400 — the app refreshes the bootstrap token on this pair.
     res.status(400).json({
       status: "FAILURE",
       message: "Invalid token.",
@@ -138,11 +141,32 @@ module.exports.portalAuthMiddleware = (req, res, next) => {
 };
 
 module.exports.checkUser = (req, res, next) => {
+  // tokenAuthMiddleware already verified the JWT when used as a pair —
+  // reuse req.user so we don't depend on the header being readable twice.
+  if (req.user?.id || req.user?._id) {
+    const role = String(req.user.role || "").toLowerCase();
+    const allowed = [
+      "patient",
+      "doctor",
+      "nurse",
+      "physiotherapist",
+      "social worker",
+      "pharmacist",
+    ];
+    if (!allowed.includes(role)) {
+      return res.status(403).json({
+        status: "FAILURE",
+        message: "You do not have access to this action.",
+      });
+    }
+    return next();
+  }
+
   const authHeader = getHeader(req, 'x-access-token', 'authorization', 'Authorization');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No Authorization header provided.",
+      message: "Please sign in again to continue.",
     });
   }
 
@@ -150,7 +174,7 @@ module.exports.checkUser = (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No token provided.",
+      message: "Please sign in again to continue.",
     });
   }
 
@@ -160,7 +184,7 @@ module.exports.checkUser = (req, res, next) => {
     if (decoded.role !== 'patient' && decoded.role !== 'doctor' && decoded.role !== 'nurse' && decoded.role !== 'physiotherapist' && decoded.role !== 'social worker' && decoded.role !== 'pharmacist') {
       return res.status(403).json({
         status: "FAILURE",
-        message: "Access denied. User does not have access to this route.",
+        message: "You do not have access to this action.",
       });
     }
 
@@ -172,18 +196,23 @@ module.exports.checkUser = (req, res, next) => {
       status: "FAILURE",
       message:
         err.name === "TokenExpiredError"
-          ? "Session expired. Please log in again."
-          : "Invalid token.",
+          ? "Your session has expired. Please sign in again."
+          : "Please sign in again to continue.",
     });
   }
 };
 
 module.exports.checkAppUser = (req, res, next) => {
-  const authHeader = getHeader(req, 'data-access-token', 'authorization', 'Authorization');
+  // appTokenMiddleware already verified the bootstrap JWT when used as a pair.
+  if (req.user?.role === "appUser") {
+    return next();
+  }
+
+  const authHeader = getHeader(req, 'data-access-token');
   if (!authHeader) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No Authorization header provided.",
+      message: "Please wait a moment and try again.",
     });
   }
 
@@ -191,7 +220,7 @@ module.exports.checkAppUser = (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       status: "FAILURE",
-      message: "Access denied. No token provided.",
+      message: "Please wait a moment and try again.",
     });
   }
 
@@ -201,7 +230,7 @@ module.exports.checkAppUser = (req, res, next) => {
     if (decoded.role !== 'appUser') {
       return res.status(403).json({
         status: "FAILURE",
-        message: "Access denied. User does not have access to this route.",
+        message: "You do not have access to this action.",
       });
     }
 
@@ -209,7 +238,7 @@ module.exports.checkAppUser = (req, res, next) => {
 
     next();
   } catch (err) {
-    return res.status(401).json({
+    return res.status(400).json({
       status: "FAILURE",
       message: "Invalid token.",
     });

@@ -189,6 +189,13 @@ app.use(
       process.env.LOCAL_HOST_3,
     ],
     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "authorization",
+      "x-access-token",
+      "data-access-token",
+    ],
     credentials: true,
   }),
 );
