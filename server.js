@@ -720,7 +720,7 @@ io.on("connection", (socket) => {
         linkedIcd = await Icd10.findOne({
           alignments: ailmentCategoryId,
         }).select(
-          "_id ICD_10_code MAF price secondaryICD_10_code secondaryPrice",
+          "_id ICD_10_code MAF price secondaryICD_10_code secondaryMAF secondaryPrice",
         );
 
         if (!linkedIcd) {
@@ -837,6 +837,9 @@ io.on("connection", (socket) => {
 
         // Prefer dedicated MAF; fall back to ICD-10 for older portal records
         const claimMaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
+        const claimSecondaryMaf = linkedIcd.secondaryICD_10_code
+          ? linkedIcd.secondaryMAF || null
+          : null;
 
         const primaryIcdPrice = Number(linkedIcd.price);
         const secondaryIcdPrice =
@@ -863,6 +866,9 @@ io.on("connection", (socket) => {
             ? {
                 secondaryIcd10Code: String(linkedIcd.secondaryICD_10_code),
                 secondaryIcd10Price: secondaryIcdPrice,
+                ...(claimSecondaryMaf
+                  ? { secondaryMaf: String(claimSecondaryMaf) }
+                  : {}),
               }
             : {}),
         };
@@ -1243,7 +1249,7 @@ io.on("connection", (socket) => {
 
       const icdLinks = await Icd10.find()
         .select(
-          "ICD_10_code MAF alignments price secondaryICD_10_code secondaryPrice",
+          "ICD_10_code MAF alignments price secondaryICD_10_code secondaryMAF secondaryPrice",
         )
         .lean();
 
@@ -1260,6 +1266,7 @@ io.on("connection", (socket) => {
             MAF: icd.MAF || icd.ICD_10_code,
             price: icd.price,
             secondaryICD_10_code: icd.secondaryICD_10_code || null,
+            secondaryMAF: icd.secondaryMAF || null,
             secondaryPrice:
               icd.secondaryPrice !== undefined && icd.secondaryPrice !== null
                 ? icd.secondaryPrice

@@ -35,11 +35,12 @@ const normalizeObjectIdArray = (value, fieldName) => {
 };
 
 /**
- * Optional second ICD-10 + price. Both must be set together, or both cleared.
- * Returns { secondaryICD_10_code, secondaryPrice } or { error }.
+ * Optional second ICD-10 + MAF + price. All three must be set together, or all cleared.
+ * Returns { secondaryICD_10_code, secondaryMAF, secondaryPrice } or { error }.
  */
 const normalizeSecondaryIcd = (
   secondaryICD_10_code,
+  secondaryMAF,
   secondaryPrice,
   primaryCode,
 ) => {
@@ -47,20 +48,28 @@ const normalizeSecondaryIcd = (
     secondaryICD_10_code !== undefined &&
     secondaryICD_10_code !== null &&
     String(secondaryICD_10_code).trim() !== "";
+  const hasMaf =
+    secondaryMAF !== undefined &&
+    secondaryMAF !== null &&
+    String(secondaryMAF).trim() !== "";
   const priceRaw = secondaryPrice;
   const hasPriceInput =
     priceRaw !== undefined &&
     priceRaw !== null &&
     String(priceRaw).trim() !== "";
 
-  if (!hasCode && !hasPriceInput) {
-    return { secondaryICD_10_code: null, secondaryPrice: null };
+  if (!hasCode && !hasMaf && !hasPriceInput) {
+    return {
+      secondaryICD_10_code: null,
+      secondaryMAF: null,
+      secondaryPrice: null,
+    };
   }
 
-  if (hasCode !== hasPriceInput) {
+  if (!(hasCode && hasMaf && hasPriceInput)) {
     return {
       error:
-        "Second ICD-10 code and second price must both be provided, or both left empty.",
+        "Second ICD-10 code, second NAMAF, and second price must all be provided, or all left empty.",
     };
   }
 
@@ -78,7 +87,11 @@ const normalizeSecondaryIcd = (
     };
   }
 
-  return { secondaryICD_10_code: code, secondaryPrice: parsed };
+  return {
+    secondaryICD_10_code: code,
+    secondaryMAF: String(secondaryMAF).trim().toUpperCase(),
+    secondaryPrice: parsed,
+  };
 };
 
 exports.create = async (req, res) => {
@@ -88,6 +101,7 @@ exports.create = async (req, res) => {
       MAF,
       price,
       secondaryICD_10_code,
+      secondaryMAF,
       secondaryPrice,
       specializations,
       alignments,
@@ -103,7 +117,7 @@ exports.create = async (req, res) => {
     if (!MAF || String(MAF).trim() === "") {
       return res.status(400).json({
         status: "FAILURE",
-        message: "MAF is required",
+        message: "NAMAF is required",
       });
     }
 
@@ -118,6 +132,7 @@ exports.create = async (req, res) => {
     const code = String(ICD_10_code).trim().toUpperCase();
     const secondary = normalizeSecondaryIcd(
       secondaryICD_10_code,
+      secondaryMAF,
       secondaryPrice,
       code,
     );
@@ -152,6 +167,7 @@ exports.create = async (req, res) => {
       MAF: maf,
       price: parsedPrice,
       secondaryICD_10_code: secondary.secondaryICD_10_code,
+      secondaryMAF: secondary.secondaryMAF,
       secondaryPrice: secondary.secondaryPrice,
       specializations: specs.ids,
       alignments: aligns.ids,
@@ -242,6 +258,7 @@ exports.update = async (req, res) => {
       MAF,
       price,
       secondaryICD_10_code,
+      secondaryMAF,
       secondaryPrice,
       specializations,
       alignments,
@@ -281,7 +298,7 @@ exports.update = async (req, res) => {
       if (!maf) {
         return res.status(400).json({
           status: "FAILURE",
-          message: "MAF cannot be empty",
+          message: "NAMAF cannot be empty",
         });
       }
       item.MAF = maf;
@@ -298,11 +315,16 @@ exports.update = async (req, res) => {
       item.price = parsedPrice;
     }
 
-    if (secondaryICD_10_code !== undefined || secondaryPrice !== undefined) {
+    if (
+      secondaryICD_10_code !== undefined ||
+      secondaryMAF !== undefined ||
+      secondaryPrice !== undefined
+    ) {
       const secondary = normalizeSecondaryIcd(
         secondaryICD_10_code !== undefined
           ? secondaryICD_10_code
           : item.secondaryICD_10_code,
+        secondaryMAF !== undefined ? secondaryMAF : item.secondaryMAF,
         secondaryPrice !== undefined ? secondaryPrice : item.secondaryPrice,
         item.ICD_10_code,
       );
@@ -313,6 +335,7 @@ exports.update = async (req, res) => {
         });
       }
       item.secondaryICD_10_code = secondary.secondaryICD_10_code;
+      item.secondaryMAF = secondary.secondaryMAF;
       item.secondaryPrice = secondary.secondaryPrice;
     }
 

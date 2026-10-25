@@ -237,11 +237,12 @@ function ensureConsultationTimelineForClaim(request) {
 }
 
 const PORTAL_ICD_SELECT =
-  "MAF ICD_10_code price secondaryICD_10_code secondaryPrice alignments";
+  "MAF ICD_10_code price secondaryICD_10_code secondaryMAF secondaryPrice alignments";
 
 /**
  * Load portal ICD-10 records for each claim (MAF, codes, prices).
- * Portal MAF is authoritative for the claim "MAF" field.
+ * Portal MAF is authoritative for the claim "MAF" field; secondaryMAF
+ * applies to the second ICD-10 line when present.
  */
 async function resolvePortalIcdForClaims(claims) {
   const Icd10 = require("../models/icd10");
@@ -327,7 +328,19 @@ async function resolvePortalIcdForClaims(claims) {
       (medicalAid.icd10Code ? String(medicalAid.icd10Code).trim() : "") ||
       "—";
 
-    portalByRequestId.set(String(request._id), { portal, maf });
+    const portalSecondaryMaf = portal?.secondaryMAF
+      ? String(portal.secondaryMAF).trim()
+      : "";
+    const secondaryMaf =
+      portalSecondaryMaf ||
+      (medicalAid.secondaryMaf ? String(medicalAid.secondaryMaf).trim() : "") ||
+      "";
+
+    portalByRequestId.set(String(request._id), {
+      portal,
+      maf,
+      secondaryMaf,
+    });
   }
 
   return portalByRequestId;
@@ -377,10 +390,10 @@ function finitePrice(value) {
 }
 
 /**
- * Resolve primary/secondary ICD codes and prices for a claim row.
+ * Resolve primary/secondary ICD codes, MAFs, and prices for a claim row.
  * Prefer values snapshotted on the request; fall back to the portal ICD record.
  */
-function resolveIcdLinesForClaim(medicalAid, portal) {
+function resolveIcdLinesForClaim(medicalAid, portal, portalInfo) {
   const primaryCode =
     (medicalAid.icd10Code && String(medicalAid.icd10Code).trim()) ||
     (portal?.ICD_10_code && String(portal.ICD_10_code).trim()) ||
@@ -400,13 +413,27 @@ function resolveIcdLinesForClaim(medicalAid, portal) {
     finitePrice(medicalAid.secondaryIcd10Price) ??
     finitePrice(portal?.secondaryPrice);
 
-  return { primaryCode, secondaryCode, primaryPrice, secondaryPrice };
+  const primaryMaf = portalInfo?.maf || "";
+  const secondaryMaf =
+    (portalInfo?.secondaryMaf && String(portalInfo.secondaryMaf).trim()) ||
+    (medicalAid.secondaryMaf && String(medicalAid.secondaryMaf).trim()) ||
+    (portal?.secondaryMAF && String(portal.secondaryMAF).trim()) ||
+    "";
+
+  return {
+    primaryCode,
+    secondaryCode,
+    primaryPrice,
+    secondaryPrice,
+    primaryMaf,
+    secondaryMaf,
+  };
 }
 
 /**
  * Build one or two claim rows for a consultation.
  * When a second ICD-10 + price exists, they are stacked underneath each other
- * with their own amounts; the PDF TOTAL is the sum of all rows.
+ * with their own amounts and MAF; the PDF TOTAL is the sum of all rows.
  */
 function buildLineItemsForClaim(
   claim,
@@ -423,8 +450,14 @@ function buildLineItemsForClaim(
     portalMaf,
   );
   const medicalAid = base.medicalAid || {};
-  const { primaryCode, secondaryCode, primaryPrice, secondaryPrice } =
-    resolveIcdLinesForClaim(medicalAid, portal);
+  const {
+    primaryCode,
+    secondaryCode,
+    primaryPrice,
+    secondaryPrice,
+    primaryMaf,
+    secondaryMaf,
+  } = resolveIcdLinesForClaim(medicalAid, portal, portalInfo);
 
   const consultationTotal = Number(
     claim.request?.consultationCost || claim.request?.estimatedCost || 0,
@@ -436,17 +469,20 @@ function buildLineItemsForClaim(
     primaryPrice != null &&
     secondaryPrice != null
   ) {
+    const secondaryLineMaf = secondaryMaf || primaryMaf;
     return [
       {
         ...base,
+        maf: primaryMaf || base.maf,
         amount: primaryPrice,
         details: `${base.ailmentTitle}\nICD10 ${primaryCode}`,
         isSecondaryIcdLine: false,
       },
       {
         ...base,
+        maf: secondaryLineMaf || base.maf,
         amount: secondaryPrice,
-        // Stacked under the primary row — ICD + price only
+        // Stacked under the primary row — ICD + price; NAMAF goes in BHF/NAMAF
         details: `ICD10 ${secondaryCode}`,
         isSecondaryIcdLine: true,
       },
@@ -542,10 +578,8 @@ async function streamMedicalAidClaimPdf(res, options) {
   const samePatient = lineItems.every(
     (item) => item.patientId && item.patientId === lineItems[0].patientId,
   );
-  const sameMedicalAid = lineItems.every(
-    (item) =>
-      item.maf === lineItems[0].maf &&
-      item.medicalAidTitle === lineItems[0].medicalAidTitle,
+  const sameMedicalAidTitle = lineItems.every(
+    (item) => item.medicalAidTitle === lineItems[0].medicalAidTitle,
   );
 
   const leftBlock = buildLeftAddressBlock(lineItems, samePatient);
@@ -573,10 +607,23 @@ async function streamMedicalAidClaimPdf(res, options) {
     ? lineItems[0].patientName
     : "MULTIPLE PATIENTS";
 
-  const medicalAidTitle = sameMedicalAid
+  const medicalAidTitle = sameMedicalAidTitle
     ? lineItems[0].medicalAidTitle
     : "VARIOUS";
-  const maf = sameMedicalAid ? lineItems[0].maf : "VARIOUS";
+  // Show each distinct MAF (primary + secondary ICD) joined when they differ
+  const uniqueMafs = [
+    ...new Set(
+      lineItems
+        .map((item) => (item.maf ? String(item.maf).trim() : ""))
+        .filter((value) => value && value !== "—"),
+    ),
+  ];
+  const maf =
+    uniqueMafs.length === 0
+      ? "—"
+      : uniqueMafs.length === 1
+        ? uniqueMafs[0]
+        : uniqueMafs.join(" / ");
   const mainMemberId = samePatient ? lineItems[0].mainMemberId : "VARIOUS";
 
   // Header TIME IN / TIME OUT = consultation started / completed
@@ -667,7 +714,7 @@ async function streamMedicalAidClaimPdf(res, options) {
       "TIME IN",
       formatTime(earliestIn),
     ],
-    ["MAF", String(maf), "TIME OUT", formatTime(latestOut)],
+    ["NAMAF", String(maf), "TIME OUT", formatTime(latestOut)],
     ["MAIN MEMBER ID", String(mainMemberId), "", ""],
   ];
 
@@ -732,13 +779,17 @@ async function streamMedicalAidClaimPdf(res, options) {
     const dateText = isContinuation ? "" : formatDate(item.consultationDate);
     const providerText = isContinuation ? "" : item.providerName;
     const patientText = isContinuation ? "" : item.patientName;
-    const practiceText = isContinuation ? "" : String(item.practiceNumber);
+    // BHF/NAMAF column shows the portal NAMAF code for that ICD line
+    const namafText =
+      item.maf && String(item.maf).trim() && String(item.maf).trim() !== "—"
+        ? String(item.maf).trim()
+        : "";
 
     const cellHeights = [
       dateText ? doc.heightOfString(dateText, { width: cols[0].w }) : 0,
       providerText ? doc.heightOfString(providerText, { width: cols[1].w }) : 0,
       patientText ? doc.heightOfString(patientText, { width: cols[2].w }) : 0,
-      practiceText ? doc.heightOfString(practiceText, { width: cols[3].w }) : 0,
+      namafText ? doc.heightOfString(namafText, { width: cols[3].w }) : 0,
       doc.heightOfString(item.details, { width: cols[4].w }),
       doc.heightOfString(formatMoney(item.amount), { width: cols[5].w }),
       doc.heightOfString(formatMoney(item.amount), { width: cols[6].w }),
@@ -754,8 +805,8 @@ async function streamMedicalAidClaimPdf(res, options) {
     if (patientText) {
       doc.text(patientText, cols[2].x, rowStartY, { width: cols[2].w });
     }
-    if (practiceText) {
-      doc.text(practiceText, cols[3].x, rowStartY, { width: cols[3].w });
+    if (namafText) {
+      doc.text(namafText, cols[3].x, rowStartY, { width: cols[3].w });
     }
     doc.text(item.details, cols[4].x, rowStartY, { width: cols[4].w });
     doc.text(formatMoney(item.amount), cols[5].x, rowStartY, {
