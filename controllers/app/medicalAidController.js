@@ -246,9 +246,7 @@ exports.providerConsultations = async (req, res) => {
 
     // Match medical-aid claims assigned to this provider. Include docs that
     // have medicalAidDetails even if paymentMethod was omitted historically.
-    const match = {
-      providerId: providerObjectId,
-      status: { $nin: ["cancelled", "expired", "rejected"] },
+    const medicalAidClause = {
       $or: [
         { paymentMethod: "medical_aid" },
         { "medicalAidDetails.icd10Code": { $exists: true, $nin: [null, ""] } },
@@ -256,19 +254,36 @@ exports.providerConsultations = async (req, res) => {
       ],
     };
 
+    // Archived consultations are only returned when status=archived.
+    const notArchivedClause = {
+      $or: [
+        { "medicalAidClaimDownload.archived": { $exists: false } },
+        { "medicalAidClaimDownload.archived": false },
+        { "medicalAidClaimDownload.archived": null },
+        { medicalAidClaimDownload: { $exists: false } },
+        { medicalAidClaimDownload: null },
+      ],
+    };
+
+    const match = {
+      providerId: providerObjectId,
+      status: { $nin: ["cancelled", "expired", "rejected"] },
+      $and: [medicalAidClause],
+    };
+
     if (statusFilter === "completed") {
       match.status = "completed";
-      match["medicalAidClaimDownload.archived"] = { $ne: true };
+      match.$and.push(notArchivedClause);
     } else if (statusFilter === "active") {
       match.status = { $in: ACTIVE_MEDICAL_AID_STATUSES };
-      match["medicalAidClaimDownload.archived"] = { $ne: true };
+      match.$and.push(notArchivedClause);
     } else if (statusFilter === "archived") {
       match.status = "completed";
       match["medicalAidClaimDownload.claimed"] = true;
       match["medicalAidClaimDownload.archived"] = true;
     } else {
-      // "all" — hide archived claimed consultations from the main list
-      match["medicalAidClaimDownload.archived"] = { $ne: true };
+      // "all" — never include archived consultations
+      match.$and.push(notArchivedClause);
     }
 
     const total = await ConsultationRequest.countDocuments(match);

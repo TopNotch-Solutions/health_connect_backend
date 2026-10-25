@@ -184,6 +184,15 @@ const consultationRequestSchema = new mongoose.Schema(
         ref: "user",
       },
     },
+    // Provider can archive completed consultations on the Requests screen
+    providerArchive: {
+      archived: { type: Boolean, default: false },
+      archivedAt: { type: Date },
+      archivedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+      },
+    },
     // Track providers who have rejected this request (for 'searching' mode)
     rejectedBy: [{
       type: mongoose.Schema.Types.ObjectId,

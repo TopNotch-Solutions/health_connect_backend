@@ -305,19 +305,200 @@ app.use("/api/app/bank-details", bankDetailsAppRouter);
 
 // Provider request history — returns ALL requests for the authenticated provider (incl. completed)
 const { tokenAuthMiddleware, checkUser } = require("./middlewares/authMiddleware");
+
+const PROVIDER_REQUEST_ACCEPTED_STATUSES = [
+  "accepted",
+  "payment_pending",
+  "paid",
+  "provider_confirmation_pending",
+  "ready_for_call",
+  "in_call",
+  "in_progress",
+  "arrived",
+  "en_route",
+];
+
+const notProviderArchivedClause = {
+  $or: [
+    { "providerArchive.archived": { $exists: false } },
+    { "providerArchive.archived": false },
+    { "providerArchive.archived": null },
+    { providerArchive: { $exists: false } },
+    { providerArchive: null },
+  ],
+};
+
 app.get("/api/app/requests/my-history", tokenAuthMiddleware, checkUser, async (req, res) => {
   try {
     const providerId = req.user.id;
-    const requests = await ConsultationRequest.find({ providerId })
+    const statusFilter = String(req.query.status || "all").toLowerCase();
+    const paginate =
+      req.query.page !== undefined ||
+      req.query.limit !== undefined ||
+      statusFilter === "archived";
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, parseInt(String(req.query.limit || "10"), 10) || 10),
+    );
+    const skip = (page - 1) * limit;
+
+    const match = { providerId };
+
+    if (statusFilter === "archived") {
+      match.status = "completed";
+      match["providerArchive.archived"] = true;
+    } else {
+      match.$and = [notProviderArchivedClause];
+      if (statusFilter === "completed") {
+        match.status = "completed";
+      } else if (statusFilter === "pending") {
+        match.status = { $in: ["searching", "pending"] };
+      } else if (statusFilter === "accepted") {
+        match.status = { $in: PROVIDER_REQUEST_ACCEPTED_STATUSES };
+      }
+    }
+
+    const query = ConsultationRequest.find(match)
       .populate("patientId", "fullname cellphoneNumber profileImage")
       .populate("ailmentCategoryId", "title provider requiresPrescription")
       .sort({ createdAt: -1 });
-    return res.status(200).json({ requests });
+
+    if (!paginate) {
+      const requests = await query;
+      return res.status(200).json({ requests });
+    }
+
+    const total = await ConsultationRequest.countDocuments(match);
+    const requests = await query.skip(skip).limit(limit).lean();
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return res.status(200).json({
+      requests,
+      pagination: {
+        currentPage: page,
+        pageSize: limit,
+        totalPages,
+        totalItems: total,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    });
   } catch (err) {
     console.error("my-history error:", err);
     return res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
+
+app.post(
+  "/api/app/requests/:id/archive",
+  tokenAuthMiddleware,
+  checkUser,
+  async (req, res) => {
+    try {
+      const providerId = req.user.id;
+      const requestId = req.params.id;
+      if (!mongoose.Types.ObjectId.isValid(requestId)) {
+        return res.status(400).json({ status: "FAILURE", message: "Invalid request id" });
+      }
+
+      const request = await ConsultationRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).json({ status: "FAILURE", message: "Request not found" });
+      }
+      if (String(request.providerId) !== String(providerId)) {
+        return res.status(403).json({
+          status: "FAILURE",
+          message: "You are not allowed to archive this request",
+        });
+      }
+      if (request.status !== "completed") {
+        return res.status(400).json({
+          status: "FAILURE",
+          message: "Only completed consultations can be archived.",
+        });
+      }
+      if (request.providerArchive?.archived) {
+        return res.status(200).json({
+          status: "SUCCESS",
+          message: "Request was already archived.",
+          data: { _id: request._id, providerArchive: request.providerArchive },
+        });
+      }
+
+      const previous = request.providerArchive || {};
+      request.providerArchive = {
+        ...(previous.toObject?.() || previous),
+        archived: true,
+        archivedAt: new Date(),
+        archivedBy: providerId,
+      };
+      await request.save();
+
+      return res.status(200).json({
+        status: "SUCCESS",
+        message: "Request archived.",
+        data: { _id: request._id, providerArchive: request.providerArchive },
+      });
+    } catch (err) {
+      console.error("archive request error:", err);
+      return res.status(500).json({ status: "ERROR", message: err.message });
+    }
+  },
+);
+
+app.post(
+  "/api/app/requests/:id/unarchive",
+  tokenAuthMiddleware,
+  checkUser,
+  async (req, res) => {
+    try {
+      const providerId = req.user.id;
+      const requestId = req.params.id;
+      if (!mongoose.Types.ObjectId.isValid(requestId)) {
+        return res.status(400).json({ status: "FAILURE", message: "Invalid request id" });
+      }
+
+      const request = await ConsultationRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).json({ status: "FAILURE", message: "Request not found" });
+      }
+      if (String(request.providerId) !== String(providerId)) {
+        return res.status(403).json({
+          status: "FAILURE",
+          message: "You are not allowed to unarchive this request",
+        });
+      }
+      if (!request.providerArchive?.archived) {
+        return res.status(200).json({
+          status: "SUCCESS",
+          message: "Request was not archived.",
+          data: { _id: request._id, providerArchive: request.providerArchive },
+        });
+      }
+
+      const previous = request.providerArchive || {};
+      const next = {
+        ...(previous.toObject?.() || previous),
+        archived: false,
+      };
+      delete next.archivedAt;
+      delete next.archivedBy;
+      request.providerArchive = next;
+      request.markModified("providerArchive");
+      await request.save();
+
+      return res.status(200).json({
+        status: "SUCCESS",
+        message: "Request unarchived.",
+        data: { _id: request._id, providerArchive: request.providerArchive },
+      });
+    } catch (err) {
+      console.error("unarchive request error:", err);
+      return res.status(500).json({ status: "ERROR", message: err.message });
+    }
+  },
+);
 
 app.use("/api/portal/auth", authPortalRouter);
 app.use("/api/portal/request", requestPortalRouter);
