@@ -1165,8 +1165,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Get requests for patient
-  socket.on("getPatientRequests", async () => {
+  // Get requests for patient (optional page/limit pagination)
+  socket.on("getPatientRequests", async (data = {}) => {
     try {
       const patientId = socket.userId || socket.authUserId;
       if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
@@ -1177,16 +1177,55 @@ io.on("connection", (socket) => {
       }
 
       const validPatientId = new mongoose.Types.ObjectId(patientId);
+      const filter = { patientId: validPatientId };
 
-      const requests = await ConsultationRequest.find({
-        patientId: validPatientId,
-      })
-        .populate("patientId", "fullname cellphoneNumber")
-        .populate("providerId", "fullname cellphoneNumber role profileImage bio")
-        .populate("ailmentCategoryId")
-        .sort({ createdAt: -1 });
+      const hasPagination =
+        data?.page !== undefined ||
+        data?.limit !== undefined ||
+        data?.paginated === true;
 
-      socket.emit("patientRequests", requests);
+      const populateQuery = (query) =>
+        query
+          .populate("patientId", "fullname cellphoneNumber")
+          .populate(
+            "providerId",
+            "fullname cellphoneNumber role profileImage bio",
+          )
+          .populate("ailmentCategoryId")
+          .sort({ createdAt: -1 });
+
+      if (!hasPagination) {
+        // Legacy: return the full list (home / waiting-room)
+        const requests = await populateQuery(
+          ConsultationRequest.find(filter),
+        );
+        socket.emit("patientRequests", requests);
+        return;
+      }
+
+      const page = Math.max(1, parseInt(data.page, 10) || 1);
+      const limit = Math.min(
+        100,
+        Math.max(1, parseInt(data.limit, 10) || 10),
+      );
+      const total = await ConsultationRequest.countDocuments(filter);
+      const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+      const requests = await populateQuery(
+        ConsultationRequest.find(filter)
+          .skip((page - 1) * limit)
+          .limit(limit),
+      );
+
+      socket.emit("patientRequests", {
+        requests,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasMore: page < totalPages,
+        },
+      });
     } catch (error) {
       socket.emit("requestError", { error: error.message });
     }
