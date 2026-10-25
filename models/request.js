@@ -176,6 +176,13 @@ const consultationRequestSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
       },
+      // Provider can archive claimed consultations to hide them from the main list
+      archived: { type: Boolean, default: false },
+      archivedAt: { type: Date },
+      archivedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+      },
     },
     // Track providers who have rejected this request (for 'searching' mode)
     rejectedBy: [{

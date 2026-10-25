@@ -240,7 +240,7 @@ exports.providerConsultations = async (req, res) => {
     const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
     const limit = Math.min(
       50,
-      Math.max(1, parseInt(String(req.query.limit || "20"), 10) || 20),
+      Math.max(1, parseInt(String(req.query.limit || "10"), 10) || 10),
     );
     const skip = (page - 1) * limit;
 
@@ -258,8 +258,17 @@ exports.providerConsultations = async (req, res) => {
 
     if (statusFilter === "completed") {
       match.status = "completed";
+      match["medicalAidClaimDownload.archived"] = { $ne: true };
     } else if (statusFilter === "active") {
       match.status = { $in: ACTIVE_MEDICAL_AID_STATUSES };
+      match["medicalAidClaimDownload.archived"] = { $ne: true };
+    } else if (statusFilter === "archived") {
+      match.status = "completed";
+      match["medicalAidClaimDownload.claimed"] = true;
+      match["medicalAidClaimDownload.archived"] = true;
+    } else {
+      // "all" — hide archived claimed consultations from the main list
+      match["medicalAidClaimDownload.archived"] = { $ne: true };
     }
 
     const total = await ConsultationRequest.countDocuments(match);
@@ -331,8 +340,30 @@ function markRequestDownloaded(request, providerId) {
     claimed: Boolean(previous.claimed),
     claimedAt: previous.claimedAt || undefined,
     claimedBy: previous.claimedBy || undefined,
+    archived: Boolean(previous.archived),
+    archivedAt: previous.archivedAt || undefined,
+    archivedBy: previous.archivedBy || undefined,
   };
   return request;
+}
+
+function assertOwnedMedicalAidClaim(request, providerId) {
+  if (!request) {
+    return { status: 404, message: "Consultation not found" };
+  }
+  if (String(request.providerId) !== String(providerId)) {
+    return {
+      status: 403,
+      message: "You are not allowed to update this claim",
+    };
+  }
+  if (request.paymentMethod !== "medical_aid") {
+    return {
+      status: 400,
+      message: "This consultation is not a medical aid claim",
+    };
+  }
+  return null;
 }
 
 function validateClaimForDownload(request, providerId) {
@@ -580,24 +611,11 @@ exports.markClaimed = async (req, res) => {
     }
 
     const request = await ConsultationRequest.findById(requestId);
-    if (!request) {
-      return res.status(404).json({
+    const ownershipError = assertOwnedMedicalAidClaim(request, providerId);
+    if (ownershipError) {
+      return res.status(ownershipError.status).json({
         status: "FAILURE",
-        message: "Consultation not found",
-      });
-    }
-
-    if (String(request.providerId) !== String(providerId)) {
-      return res.status(403).json({
-        status: "FAILURE",
-        message: "You are not allowed to update this claim",
-      });
-    }
-
-    if (request.paymentMethod !== "medical_aid") {
-      return res.status(400).json({
-        status: "FAILURE",
-        message: "This consultation is not a medical aid claim",
+        message: ownershipError.message,
       });
     }
 
@@ -629,6 +647,9 @@ exports.markClaimed = async (req, res) => {
       claimed: true,
       claimedAt: new Date(),
       claimedBy: providerId,
+      archived: Boolean(previous.archived),
+      archivedAt: previous.archivedAt || undefined,
+      archivedBy: previous.archivedBy || undefined,
     };
     await request.save();
 
@@ -642,6 +663,143 @@ exports.markClaimed = async (req, res) => {
     });
   } catch (error) {
     console.error("Error marking medical aid claim as claimed:", error);
+    return res.status(500).json({
+      status: "ERROR",
+      message: error.message,
+    });
+  }
+};
+
+exports.archiveClaimed = async (req, res) => {
+  try {
+    const providerId = req.user?.id || req.user?._id;
+    const requestId = req.params.id;
+
+    if (!providerId) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "User id is required",
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "Invalid consultation id",
+      });
+    }
+
+    const request = await ConsultationRequest.findById(requestId);
+    const ownershipError = assertOwnedMedicalAidClaim(request, providerId);
+    if (ownershipError) {
+      return res.status(ownershipError.status).json({
+        status: "FAILURE",
+        message: ownershipError.message,
+      });
+    }
+
+    if (!request.medicalAidClaimDownload?.claimed) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "Only claimed consultations can be archived.",
+      });
+    }
+
+    if (request.medicalAidClaimDownload?.archived) {
+      return res.status(200).json({
+        status: "SUCCESS",
+        message: "Consultation was already archived.",
+        data: {
+          _id: request._id,
+          medicalAidClaimDownload: request.medicalAidClaimDownload,
+        },
+      });
+    }
+
+    const previous = request.medicalAidClaimDownload || {};
+    request.medicalAidClaimDownload = {
+      ...(previous.toObject?.() || previous),
+      archived: true,
+      archivedAt: new Date(),
+      archivedBy: providerId,
+    };
+    await request.save();
+
+    return res.status(200).json({
+      status: "SUCCESS",
+      message: "Consultation archived.",
+      data: {
+        _id: request._id,
+        medicalAidClaimDownload: request.medicalAidClaimDownload,
+      },
+    });
+  } catch (error) {
+    console.error("Error archiving medical aid consultation:", error);
+    return res.status(500).json({
+      status: "ERROR",
+      message: error.message,
+    });
+  }
+};
+
+exports.unarchiveClaimed = async (req, res) => {
+  try {
+    const providerId = req.user?.id || req.user?._id;
+    const requestId = req.params.id;
+
+    if (!providerId) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "User id is required",
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        status: "FAILURE",
+        message: "Invalid consultation id",
+      });
+    }
+
+    const request = await ConsultationRequest.findById(requestId);
+    const ownershipError = assertOwnedMedicalAidClaim(request, providerId);
+    if (ownershipError) {
+      return res.status(ownershipError.status).json({
+        status: "FAILURE",
+        message: ownershipError.message,
+      });
+    }
+
+    if (!request.medicalAidClaimDownload?.archived) {
+      return res.status(200).json({
+        status: "SUCCESS",
+        message: "Consultation was not archived.",
+        data: {
+          _id: request._id,
+          medicalAidClaimDownload: request.medicalAidClaimDownload,
+        },
+      });
+    }
+
+    const previous = request.medicalAidClaimDownload || {};
+    const next = {
+      ...(previous.toObject?.() || previous),
+      archived: false,
+    };
+    delete next.archivedAt;
+    delete next.archivedBy;
+    request.medicalAidClaimDownload = next;
+    request.markModified("medicalAidClaimDownload");
+    await request.save();
+
+    return res.status(200).json({
+      status: "SUCCESS",
+      message: "Consultation unarchived.",
+      data: {
+        _id: request._id,
+        medicalAidClaimDownload: request.medicalAidClaimDownload,
+      },
+    });
+  } catch (error) {
+    console.error("Error unarchiving medical aid consultation:", error);
     return res.status(500).json({
       status: "ERROR",
       message: error.message,

@@ -6,6 +6,8 @@ const {
   downloadClaimPdf,
   downloadClaimPdfsBatch,
   markClaimed,
+  archiveClaimed,
+  unarchiveClaimed,
 } = require("../../controllers/app/medicalAidController");
 const {
   tokenAuthMiddleware,
@@ -45,6 +47,18 @@ medicalAidAppRouter.post(
   tokenAuthMiddleware,
   checkUser,
   markClaimed,
+);
+medicalAidAppRouter.post(
+  "/consultations/:id/archive",
+  tokenAuthMiddleware,
+  checkUser,
+  archiveClaimed,
+);
+medicalAidAppRouter.post(
+  "/consultations/:id/unarchive",
+  tokenAuthMiddleware,
+  checkUser,
+  unarchiveClaimed,
 );
 
 module.exports = medicalAidAppRouter;
