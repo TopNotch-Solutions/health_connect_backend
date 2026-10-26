@@ -764,6 +764,9 @@ exports.login = async (req, res) => {
               region: user.region,
               town: user.town,
               isAccountVerified: user.isAccountVerified,
+              isDocumentVerified: user.isDocumentVerified,
+              idDocumentFront: user.idDocumentFront,
+              idDocumentBack: user.idDocumentBack,
               token: getJwtToken,
             }
           : {
@@ -836,7 +839,9 @@ exports.userDetails = async (req, res) => {
               region: user.region,
               town: user.town,
               isAccountVerified: user.isAccountVerified,
-              
+              isDocumentVerified: user.isDocumentVerified,
+              idDocumentFront: user.idDocumentFront,
+              idDocumentBack: user.idDocumentBack,
             }
           : {
               fullname: user.fullname,
@@ -1338,6 +1343,7 @@ exports.updateIDFront = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Your ID front has been updated successfully",
+      idDocumentFront: imagePath,
     });
   } catch (error) {
     console.error("Error registering patient:", error);
@@ -1401,6 +1407,7 @@ exports.updateIDBack = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Your ID back has been updated successfully",
+      idDocumentBack: imagePath,
     });
   } catch (error) {
     console.error("Error registering patient:", error);
