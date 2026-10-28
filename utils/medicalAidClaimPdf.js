@@ -709,8 +709,9 @@ async function streamMedicalAidClaimPdf(res, options) {
 
   const doc = new PDFDocument({
     size: "A4",
-    margin: 40,
-    bufferPages: true,
+    // Leave a bottom margin so the footer can sit on the same page
+    // without PDFKit auto-creating a blank follow-on page.
+    margins: { top: 40, left: 40, right: 40, bottom: 36 },
     info: {
       Title: `${providerName} - Statement`,
       Author: providerName,
@@ -721,7 +722,9 @@ async function streamMedicalAidClaimPdf(res, options) {
   doc.pipe(res);
 
   const stampClaimFooter = () => {
-    const footerY = doc.page.height - 32;
+    const previousX = doc.x;
+    const previousY = doc.y;
+    const footerY = doc.page.height - 24;
     doc
       .font("Helvetica")
       .fontSize(7)
@@ -731,11 +734,14 @@ async function streamMedicalAidClaimPdf(res, options) {
         align: "right",
         lineBreak: false,
       });
+    // Keep the write cursor where content left off so end() does not paginate
+    doc.x = previousX;
+    doc.y = previousY;
   };
 
   const leftX = 40;
   const rightX = 320;
-  const pageBottom = 780;
+  const pageBottom = 760;
   let y = 40;
 
   // Header – practice name
@@ -968,12 +974,8 @@ async function streamMedicalAidClaimPdf(res, options) {
   y += 12;
   doc.text(`REFERENCE: ${referenceName}`, leftX, y, { lineBreak: false });
 
-  // Stamp production footer on every page (bottom-right)
-  const pages = doc.bufferedPageRange();
-  for (let i = 0; i < pages.count; i += 1) {
-    doc.switchToPage(pages.start + i);
-    stampClaimFooter();
-  }
+  // Same page, bottom-right corner
+  stampClaimFooter();
 
   doc.end();
 }
