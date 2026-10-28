@@ -457,6 +457,17 @@ app.post(
   },
 );
 
+const {
+  acceptRequestHttp,
+} = require("./controllers/app/consultationAcceptController");
+
+app.post(
+  "/api/app/requests/:id/accept",
+  tokenAuthMiddleware,
+  checkUser,
+  acceptRequestHttp,
+);
+
 app.post(
   "/api/app/requests/:id/unarchive",
   tokenAuthMiddleware,
