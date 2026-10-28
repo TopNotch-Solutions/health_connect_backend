@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 exports.create = async (req, res) => {
-    const { description } = req.body;
+    const { description, contactNumber } = req.body;
     const image = req.file ? req.file.filename : null;
     if (!description) {
       return res
@@ -19,7 +19,8 @@ exports.create = async (req, res) => {
     try{
         const newAdvert = new Adverts({
             description,
-            image
+            image,
+            contactNumber: String(contactNumber || "").trim(),
         });
         await newAdvert.save();
         return res
@@ -40,7 +41,7 @@ exports.getAllAdverts = async (req, res) => {
     }   
 }
 exports.updateDescription = async (req, res) => {
-    const { description } = req.body;
+    const { description, contactNumber } = req.body;
     const { id } = req.params;
     if (!description) {
       return res
@@ -53,8 +54,11 @@ exports.updateDescription = async (req, res) => {
             return res.status(404).json({ message: "Advert not found." });
         }
         advert.description = description;
+        if (contactNumber !== undefined) {
+          advert.contactNumber = String(contactNumber || "").trim();
+        }
         await advert.save();
-        res.status(200).json({ message: "Advert description updated successfully.", advert });
+        res.status(200).json({ message: "Advert updated successfully.", advert });
     }catch (error) {
         console.error("Error updating advert description:", error);
         res.status(500).json({ message: "We're having trouble processing your request. Please try again shortly.", error });

@@ -1890,13 +1890,39 @@ io.on("connection", (socket) => {
   });
 
   // Provider accepts a request
-  socket.on("acceptRequest", async (data) => {
+  socket.on("acceptRequest", async (data = {}) => {
     try {
+      // Prefer authenticated socket identity — never trust client providerId alone.
+      const requestId = data?.requestId;
+      const providerId =
+        socket.userId || socket.authUserId || data?.providerId || null;
+      const providerLocation = data?.providerLocation;
+
       console.log("🔔 acceptRequest handler - received data:", {
-        requestId: data.requestId,
-        providerId: data.providerId,
+        requestId,
+        providerId,
+        clientProviderId: data?.providerId,
+        socketUserId: socket.userId,
+        authUserId: socket.authUserId,
+        hasProviderLocation: Boolean(providerLocation),
+        socketId: socket.id,
       });
-      const { requestId, providerId, providerLocation } = data;
+
+      if (!requestId) {
+        socket.emit("requestError", {
+          requestId,
+          error: "Consultation request id is required.",
+        });
+        return;
+      }
+
+      if (!providerId) {
+        socket.emit("requestError", {
+          requestId,
+          error: "Authentication required. Please sign in again.",
+        });
+        return;
+      }
 
       console.log("🔍 Looking up request with ID:", requestId);
       const request = await ConsultationRequest.findById(requestId);
@@ -1904,6 +1930,7 @@ io.on("connection", (socket) => {
 
       if (!request) {
         socket.emit("requestError", {
+          requestId,
           error:
             "We couldn't find this consultation request. It may have been cancelled or already completed. Please refresh and try again.",
         });
@@ -1912,13 +1939,14 @@ io.on("connection", (socket) => {
 
       if (request.status !== "searching" && request.status !== "pending") {
         socket.emit("requestError", {
+          requestId,
           error:
             "This consultation request is no longer available for acceptance. It may have been accepted by another provider or cancelled.",
         });
         return;
       }
 
-      // Find provider user - providerId is always valid
+      // Find provider user from authenticated identity
       let validProviderId = providerId;
       let provider = null;
       console.log(
@@ -1929,13 +1957,12 @@ io.on("connection", (socket) => {
       );
 
       if (!mongoose.Types.ObjectId.isValid(providerId)) {
-        console.log(
-          "🔍 Provider ID is not ObjectId",
-        );
+        console.log("🔍 Provider ID is not ObjectId");
         provider = null;
         console.log("📊 Provider found by id:", !!provider);
         if (!provider) {
           socket.emit("requestError", {
+            requestId,
             error:
               "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
           });
@@ -1950,6 +1977,7 @@ io.on("connection", (socket) => {
         console.log("📊 Provider found by ObjectId:", !!provider);
         if (!provider) {
           socket.emit("requestError", {
+            requestId,
             error:
               "We couldn't find your account information. Please try logging in again or contact support if the issue persists.",
           });
@@ -1963,6 +1991,7 @@ io.on("connection", (socket) => {
       }).select("_id status");
       if (activeForProvider) {
         socket.emit("requestError", {
+          requestId,
           error:
             "You already have an ongoing consultation. Please complete or cancel it before accepting another request.",
         });
@@ -1974,6 +2003,7 @@ io.on("connection", (socket) => {
         normalizeCoordinates(socket.providerLocation);
       if (!acceptProviderCoordinates) {
         socket.emit("requestError", {
+          requestId,
           error:
             "Your current location is required before accepting this consultation. Please refresh nearby requests and try again.",
         });
@@ -1996,6 +2026,7 @@ io.on("connection", (socket) => {
       );
       if (!visibilityCheck.allowed) {
         socket.emit("requestError", {
+          requestId,
           error:
             visibilityCheck.reason ===
             "provider_role_or_specialization_mismatch"

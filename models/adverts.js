@@ -9,7 +9,12 @@ const advertsSchema = new mongoose.Schema(
     image: {
       type: String,
       required: true,
-    }
+    },
+    contactNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,
