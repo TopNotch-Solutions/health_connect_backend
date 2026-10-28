@@ -1079,20 +1079,22 @@ io.on("connection", (socket) => {
           details.membershipNumber || details.memberNumber || "",
         ).trim();
         const mainMemberName = String(details.mainMemberName || "").trim();
+        const mainMemberId = String(details.mainMemberId || "").trim();
         const residentialAddress = String(
           details.residentialAddress || "",
         ).trim();
 
-        // membershipNumber = patient MAF on the claim form; portal NAMAF stays on `maf`.
+        // membershipNumber = medical aid number (MAF header); portal NAMAF stays on `maf`.
         if (
           !medicalAidId ||
           !membershipNumber ||
           !mainMemberName ||
+          !mainMemberId ||
           !residentialAddress
         ) {
           socket.emit("requestError", {
             error:
-              "Please provide medical aid, member number, main member name, and residential address.",
+              "Please provide medical aid, medical aid number, main member name, main member ID, and residential address.",
           });
           return;
         }
@@ -1185,7 +1187,7 @@ io.on("connection", (socket) => {
           };
         }
 
-        // Portal NAMAF (tariff) for BHF/NAMAF line items; patient member number is MAF on claim header
+        // Portal NAMAF (tariff) for BHF/NAMAF line items; medical aid number is MAF on claim header
         const portalNamaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
         const claimSecondaryMaf = linkedIcdPricing.secondaryMaf || null;
         const primaryIcdPrice = linkedIcdPricing.primaryPrice;
@@ -1198,6 +1200,7 @@ io.on("connection", (socket) => {
           membershipNumber,
           maf: portalNamaf,
           mainMemberName,
+          mainMemberId,
           residentialAddress,
           postalAddress: postalSnapshot,
           icd10Id: linkedIcd._id,

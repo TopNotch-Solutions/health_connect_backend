@@ -240,8 +240,9 @@ const PORTAL_ICD_SELECT =
   "MAF ICD_10_code price secondaryICD_10_code secondaryMAF secondaryPrice alignments";
 
 /**
- * Load portal ICD-10 records for each claim (MAF, codes, prices).
- * Portal MAF is authoritative for the claim "MAF" field; secondaryMAF
+ * Load portal ICD-10 records for each claim (NAMAF, codes, prices).
+ * Portal MAF/NAMAF feeds the BHF/NAMAF table column; claim header "MAF"
+ * uses the patient medical aid number (membershipNumber). secondaryMAF
  * applies to the second ICD-10 line when present.
  */
 async function resolvePortalIcdForClaims(claims) {
@@ -365,6 +366,13 @@ function buildLineItemBase(
   const patientName = patientDisplayName(request, patient);
   const ailmentTitle = ailment?.title || "Consultation";
 
+  const membershipNumber = medicalAid.membershipNumber
+    ? String(medicalAid.membershipNumber).trim()
+    : "";
+  const providedMainMemberId = medicalAid.mainMemberId
+    ? String(medicalAid.mainMemberId).trim()
+    : "";
+
   return {
     consultationDate,
     timeIn,
@@ -372,9 +380,16 @@ function buildLineItemBase(
     patientName,
     patientId: String(patient?._id || patient || ""),
     medicalAidTitle: String(medicalAid.medicalAidTitle || "MEDICAL AID"),
-    // MAF on the claim comes from the portal MAF field
-    maf: portalMaf || medicalAid.maf || medicalAid.membershipNumber || "—",
-    mainMemberId: patient?.nationalId || medicalAid.mainMemberName || "—",
+    // Header MAF = medical aid / membership number from the request form
+    membershipNumber: membershipNumber || "—",
+    // BHF/NAMAF column uses portal NAMAF (passed in as portalMaf)
+    maf: portalMaf || medicalAid.maf || "—",
+    // MAIN MEMBER ID = main member ID entered on the request form
+    mainMemberId:
+      providedMainMemberId ||
+      // Legacy claims before mainMemberId was collected
+      (patient?.nationalId ? String(patient.nationalId).trim() : "") ||
+      "—",
     patientPhone: String(patient?.cellphoneNumber || "").trim(),
     medicalAid,
     request,
@@ -610,23 +625,23 @@ async function streamMedicalAidClaimPdf(res, options) {
   const medicalAidTitle = sameMedicalAidTitle
     ? lineItems[0].medicalAidTitle
     : "VARIOUS";
-  // Header "MAF" = patient medical-aid member number from the request.
+  // Header "MAF" = membership / medical aid number from the request.
   // BHF/NAMAF table column still uses portal NAMAF codes per ICD line.
   const uniqueMemberNumbers = [
     ...new Set(
       lineItems
         .map((item) => {
-          const fromMembership = item.medicalAid?.membershipNumber
+          const fromItem =
+            item.membershipNumber && String(item.membershipNumber).trim() !== "—"
+              ? String(item.membershipNumber).trim()
+              : "";
+          if (fromItem) return fromItem;
+          const fromDetails = item.medicalAid?.membershipNumber
             ? String(item.medicalAid.membershipNumber).trim()
             : "";
-          if (fromMembership && fromMembership !== "—") return fromMembership;
-          // Legacy requests stored member number in maf before the split
-          const legacy = item.medicalAid?.maf
-            ? String(item.medicalAid.maf).trim()
-            : "";
-          return legacy && legacy !== "—" ? legacy : "";
+          return fromDetails && fromDetails !== "—" ? fromDetails : "";
         })
-        .filter((value) => value && value !== "—"),
+        .filter(Boolean),
     ),
   ];
   const maf =
@@ -635,7 +650,30 @@ async function streamMedicalAidClaimPdf(res, options) {
       : uniqueMemberNumbers.length === 1
         ? uniqueMemberNumbers[0]
         : uniqueMemberNumbers.join(" / ");
-  const mainMemberId = samePatient ? lineItems[0].mainMemberId : "VARIOUS";
+
+  const uniqueMainMemberIds = [
+    ...new Set(
+      lineItems
+        .map((item) => {
+          const fromItem =
+            item.mainMemberId && String(item.mainMemberId).trim() !== "—"
+              ? String(item.mainMemberId).trim()
+              : "";
+          if (fromItem) return fromItem;
+          const fromDetails = item.medicalAid?.mainMemberId
+            ? String(item.medicalAid.mainMemberId).trim()
+            : "";
+          return fromDetails || "";
+        })
+        .filter(Boolean),
+    ),
+  ];
+  const mainMemberId =
+    uniqueMainMemberIds.length === 0
+      ? "—"
+      : uniqueMainMemberIds.length === 1
+        ? uniqueMainMemberIds[0]
+        : uniqueMainMemberIds.join(" / ");
 
   // Header TIME IN / TIME OUT = consultation started / completed
   // (earliest start and latest end when the PDF batches multiple claims)
@@ -672,6 +710,7 @@ async function streamMedicalAidClaimPdf(res, options) {
   const doc = new PDFDocument({
     size: "A4",
     margin: 40,
+    bufferPages: true,
     info: {
       Title: `${providerName} - Statement`,
       Author: providerName,
@@ -680,6 +719,19 @@ async function streamMedicalAidClaimPdf(res, options) {
   });
 
   doc.pipe(res);
+
+  const stampClaimFooter = () => {
+    const footerY = doc.page.height - 32;
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor("#6B7280")
+      .text("Conducted through Health Connect Namibia", 40, footerY, {
+        width: doc.page.width - 80,
+        align: "right",
+        lineBreak: false,
+      });
+  };
 
   const leftX = 40;
   const rightX = 320;
@@ -915,6 +967,13 @@ async function streamMedicalAidClaimPdf(res, options) {
   });
   y += 12;
   doc.text(`REFERENCE: ${referenceName}`, leftX, y, { lineBreak: false });
+
+  // Stamp production footer on every page (bottom-right)
+  const pages = doc.bufferedPageRange();
+  for (let i = 0; i < pages.count; i += 1) {
+    doc.switchToPage(pages.start + i);
+    stampClaimFooter();
+  }
 
   doc.end();
 }
