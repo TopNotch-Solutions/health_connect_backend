@@ -610,20 +610,28 @@ async function streamMedicalAidClaimPdf(res, options) {
   const medicalAidTitle = sameMedicalAidTitle
     ? lineItems[0].medicalAidTitle
     : "VARIOUS";
-  // Show each distinct MAF (primary + secondary ICD) joined when they differ
-  const uniqueMafs = [
+  // Header "MAF" = medical-aid MAF snapshotted on the patient's request
+  // (the fund/claim MAF for the medical aid they selected). ICD line MAFs
+  // still appear in the BHF/MAF table column below.
+  const uniqueClaimMafs = [
     ...new Set(
       lineItems
-        .map((item) => (item.maf ? String(item.maf).trim() : ""))
+        .map((item) => {
+          const fromDetails = item.medicalAid?.maf
+            ? String(item.medicalAid.maf).trim()
+            : "";
+          if (fromDetails && fromDetails !== "—") return fromDetails;
+          return item.maf ? String(item.maf).trim() : "";
+        })
         .filter((value) => value && value !== "—"),
     ),
   ];
   const maf =
-    uniqueMafs.length === 0
+    uniqueClaimMafs.length === 0
       ? "—"
-      : uniqueMafs.length === 1
-        ? uniqueMafs[0]
-        : uniqueMafs.join(" / ");
+      : uniqueClaimMafs.length === 1
+        ? uniqueClaimMafs[0]
+        : uniqueClaimMafs.join(" / ");
   const mainMemberId = samePatient ? lineItems[0].mainMemberId : "VARIOUS";
 
   // Header TIME IN / TIME OUT = consultation started / completed
@@ -714,7 +722,7 @@ async function streamMedicalAidClaimPdf(res, options) {
       "TIME IN",
       formatTime(earliestIn),
     ],
-    ["NAMAF", String(maf), "TIME OUT", formatTime(latestOut)],
+    ["MAF", String(maf), "TIME OUT", formatTime(latestOut)],
     ["MAIN MEMBER ID", String(mainMemberId), "", ""],
   ];
 

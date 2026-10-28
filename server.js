@@ -84,6 +84,9 @@ const {
   validateNamibianPostalAddress,
   formatPostalAddressString,
 } = require("./utils/postalAddressValidation");
+const {
+  resolveMedicalAidIcdPricing,
+} = require("./utils/medicalAidIcdPricing");
 const { setSocketData } = require("./controllers/portal/requestController");
 const User = require("./models/user");
 const ConsultationRequest = require("./models/request");
@@ -1038,13 +1041,18 @@ io.on("connection", (socket) => {
       }
 
       let resolvedMedicalAidDetails;
-      let linkedIcd = null;
+      let linkedIcdPricing = null;
       if (normalizedPaymentMethod === "medical_aid") {
-        linkedIcd = await Icd10.findOne({
+        const linkedIcds = await Icd10.find({
           alignments: ailmentCategoryId,
-        }).select(
-          "_id ICD_10_code MAF price secondaryICD_10_code secondaryMAF secondaryPrice",
-        );
+        })
+          .select(
+            "_id ICD_10_code MAF price secondaryICD_10_code secondaryMAF secondaryPrice",
+          )
+          .sort({ createdAt: 1 });
+
+        linkedIcdPricing = resolveMedicalAidIcdPricing(linkedIcds);
+        const linkedIcd = linkedIcdPricing?.primary || null;
 
         if (!linkedIcd) {
           socket.emit("requestError", {
@@ -1160,17 +1168,9 @@ io.on("connection", (socket) => {
 
         // Prefer dedicated MAF; fall back to ICD-10 for older portal records
         const claimMaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
-        const claimSecondaryMaf = linkedIcd.secondaryICD_10_code
-          ? linkedIcd.secondaryMAF || null
-          : null;
-
-        const primaryIcdPrice = Number(linkedIcd.price);
-        const secondaryIcdPrice =
-          linkedIcd.secondaryICD_10_code &&
-          linkedIcd.secondaryPrice != null &&
-          Number.isFinite(Number(linkedIcd.secondaryPrice))
-            ? Number(linkedIcd.secondaryPrice)
-            : null;
+        const claimSecondaryMaf = linkedIcdPricing.secondaryMaf || null;
+        const primaryIcdPrice = linkedIcdPricing.primaryPrice;
+        const secondaryIcdPrice = linkedIcdPricing.secondaryPrice;
 
         resolvedMedicalAidDetails = {
           medicalAidId: medicalAid._id,
@@ -1185,9 +1185,9 @@ io.on("connection", (socket) => {
           icd10Id: linkedIcd._id,
           icd10Code: linkedIcd.ICD_10_code,
           icd10Price: primaryIcdPrice,
-          ...(linkedIcd.secondaryICD_10_code
+          ...(linkedIcdPricing.secondaryCode
             ? {
-                secondaryIcd10Code: String(linkedIcd.secondaryICD_10_code),
+                secondaryIcd10Code: String(linkedIcdPricing.secondaryCode),
                 secondaryIcd10Price: secondaryIcdPrice,
                 ...(claimSecondaryMaf
                   ? { secondaryMaf: String(claimSecondaryMaf) }
@@ -1197,20 +1197,10 @@ io.on("connection", (socket) => {
         };
       }
 
-      // Medical aid consultations use the ICD-10 price(s); otherwise use ailment costs.
-      // When a second ICD + price is configured, consultation cost is the sum.
-      const medicalAidIcdCost =
-        linkedIcd != null
-          ? Number(linkedIcd.price || 0) +
-            (linkedIcd.secondaryICD_10_code &&
-            linkedIcd.secondaryPrice != null &&
-            Number.isFinite(Number(linkedIcd.secondaryPrice))
-              ? Number(linkedIcd.secondaryPrice)
-              : 0)
-          : null;
+      // Medical aid: consultation cost = first ICD price + second ICD price (when present).
       const selectedCost =
         normalizedPaymentMethod === "medical_aid"
-          ? medicalAidIcdCost
+          ? linkedIcdPricing?.consultationCost ?? null
           : consultationMode === "video_consultation"
             ? ailmentCategory.teleconsultationCost
             : ailmentCategory.physicalconsultationCost;
@@ -1573,8 +1563,9 @@ io.on("connection", (socket) => {
       const icdLinks = categoryIds.length
         ? await Icd10.find({ alignments: { $in: categoryIds } })
             .select(
-              "ICD_10_code MAF alignments price secondaryICD_10_code secondaryMAF secondaryPrice",
+              "ICD_10_code MAF alignments price secondaryICD_10_code secondaryMAF secondaryPrice createdAt",
             )
+            .sort({ createdAt: 1 })
             .lean()
         : [];
 

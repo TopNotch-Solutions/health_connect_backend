@@ -2,7 +2,7 @@ const BankDetails = require("../../models/bankDetails");
 const {
   validateBankDetails,
   isBankDetailsComplete,
-  maskAccountNumber,
+  maskBankField,
 } = require("../../utils/bankDetailsValidation");
 
 function serialize(doc) {
@@ -11,13 +11,13 @@ function serialize(doc) {
   return {
     id: String(obj._id),
     userId: String(obj.userId),
-    accountHolder: obj.accountHolder || "",
-    bankName: obj.bankName || "",
-    branchName: obj.branchName || "",
-    branchCode: obj.branchCode || "",
-    // Never expose the full account number via the API (claim PDF reads DB).
-    accountNumber: maskAccountNumber(obj.accountNumber),
-    accountType: obj.accountType || "",
+    // Mask every field for display — claim PDFs still read full values from DB.
+    accountHolder: maskBankField(obj.accountHolder),
+    bankName: maskBankField(obj.bankName),
+    branchName: maskBankField(obj.branchName),
+    branchCode: maskBankField(obj.branchCode),
+    accountNumber: maskBankField(obj.accountNumber),
+    accountType: maskBankField(obj.accountType),
     isComplete: isBankDetailsComplete(obj),
     updatedAt: obj.updatedAt,
     createdAt: obj.createdAt,
@@ -61,7 +61,16 @@ exports.upsertMine = async (req, res) => {
 
     const existing = await BankDetails.findOne({ userId });
     const validation = validateBankDetails(req.body || {}, {
-      existingAccountNumber: existing?.accountNumber,
+      existing: existing
+        ? {
+            accountHolder: existing.accountHolder,
+            bankName: existing.bankName,
+            branchName: existing.branchName,
+            branchCode: existing.branchCode,
+            accountNumber: existing.accountNumber,
+            accountType: existing.accountType,
+          }
+        : undefined,
     });
     if (!validation.ok) {
       return res.status(400).json({
