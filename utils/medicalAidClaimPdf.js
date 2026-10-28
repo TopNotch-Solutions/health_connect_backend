@@ -610,28 +610,31 @@ async function streamMedicalAidClaimPdf(res, options) {
   const medicalAidTitle = sameMedicalAidTitle
     ? lineItems[0].medicalAidTitle
     : "VARIOUS";
-  // Header "MAF" = medical-aid MAF snapshotted on the patient's request
-  // (the fund/claim MAF for the medical aid they selected). ICD line MAFs
-  // still appear in the BHF/MAF table column below.
-  const uniqueClaimMafs = [
+  // Header "MAF" = patient medical-aid member number from the request.
+  // BHF/NAMAF table column still uses portal NAMAF codes per ICD line.
+  const uniqueMemberNumbers = [
     ...new Set(
       lineItems
         .map((item) => {
-          const fromDetails = item.medicalAid?.maf
+          const fromMembership = item.medicalAid?.membershipNumber
+            ? String(item.medicalAid.membershipNumber).trim()
+            : "";
+          if (fromMembership && fromMembership !== "—") return fromMembership;
+          // Legacy requests stored member number in maf before the split
+          const legacy = item.medicalAid?.maf
             ? String(item.medicalAid.maf).trim()
             : "";
-          if (fromDetails && fromDetails !== "—") return fromDetails;
-          return item.maf ? String(item.maf).trim() : "";
+          return legacy && legacy !== "—" ? legacy : "";
         })
         .filter((value) => value && value !== "—"),
     ),
   ];
   const maf =
-    uniqueClaimMafs.length === 0
+    uniqueMemberNumbers.length === 0
       ? "—"
-      : uniqueClaimMafs.length === 1
-        ? uniqueClaimMafs[0]
-        : uniqueClaimMafs.join(" / ");
+      : uniqueMemberNumbers.length === 1
+        ? uniqueMemberNumbers[0]
+        : uniqueMemberNumbers.join(" / ");
   const mainMemberId = samePatient ? lineItems[0].mainMemberId : "VARIOUS";
 
   // Header TIME IN / TIME OUT = consultation started / completed

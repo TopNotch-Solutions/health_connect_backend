@@ -1075,16 +1075,24 @@ io.on("connection", (socket) => {
 
         const details = medicalAidDetails || {};
         const medicalAidId = details.medicalAidId;
+        const membershipNumber = String(
+          details.membershipNumber || details.memberNumber || "",
+        ).trim();
         const mainMemberName = String(details.mainMemberName || "").trim();
         const residentialAddress = String(
           details.residentialAddress || "",
         ).trim();
 
-        // MAF is not collected in the app — claim MAF uses the portal MAF field.
-        if (!medicalAidId || !mainMemberName || !residentialAddress) {
+        // membershipNumber = patient MAF on the claim form; portal NAMAF stays on `maf`.
+        if (
+          !medicalAidId ||
+          !membershipNumber ||
+          !mainMemberName ||
+          !residentialAddress
+        ) {
           socket.emit("requestError", {
             error:
-              "Please provide medical aid, main member name, and residential address.",
+              "Please provide medical aid, member number, main member name, and residential address.",
           });
           return;
         }
@@ -1177,8 +1185,8 @@ io.on("connection", (socket) => {
           };
         }
 
-        // Prefer dedicated MAF; fall back to ICD-10 for older portal records
-        const claimMaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
+        // Portal NAMAF (tariff) for BHF/NAMAF line items; patient member number is MAF on claim header
+        const portalNamaf = linkedIcd.MAF || linkedIcd.ICD_10_code;
         const claimSecondaryMaf = linkedIcdPricing.secondaryMaf || null;
         const primaryIcdPrice = linkedIcdPricing.primaryPrice;
         const secondaryIcdPrice = linkedIcdPricing.secondaryPrice;
@@ -1187,9 +1195,8 @@ io.on("connection", (socket) => {
           medicalAidId: medicalAid._id,
           medicalAidTitle: medicalAid.title,
           medicalAidImage: medicalAid.image || null,
-          // MAF on claims comes from the portal MAF field
-          membershipNumber: claimMaf,
-          maf: claimMaf,
+          membershipNumber,
+          maf: portalNamaf,
           mainMemberName,
           residentialAddress,
           postalAddress: postalSnapshot,

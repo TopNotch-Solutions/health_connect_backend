@@ -107,10 +107,11 @@ const consultationRequestSchema = new mongoose.Schema(
       },
       medicalAidTitle: { type: String },
       medicalAidImage: { type: String },
+      // Patient medical-aid member number — shown as MAF on the claim form header
       membershipNumber: { type: String },
-      // Portal MAF code (used on claim statements); distinct from ICD-10
+      // Portal NAMAF / tariff code for BHF/NAMAF line items (from ICD-10 admin)
       maf: { type: String },
-      // Optional second MAF for the secondary ICD-10 on the claim
+      // Optional second NAMAF for the secondary ICD-10 on the claim
       secondaryMaf: { type: String },
       mainMemberName: { type: String },
       residentialAddress: { type: String },
